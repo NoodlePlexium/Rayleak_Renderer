@@ -10,12 +10,23 @@ struct Vertex
     float u, v;
 };
 
+struct MeshPartition
+{
+    uint verticesStart;
+    uint indicesStart;
+    uint indicesCount;
+};
+
 layout(binding = 1) readonly buffer VertexBuffer {
     Vertex vertices[];
 };
 
 layout(binding = 2) readonly buffer IndexBuffer {
     uint indices[];
+};
+
+layout(binding = 3) readonly buffer PartitionBuffer {
+    MeshPartition meshPartitions[];
 };
 
 struct CameraInfo
@@ -42,7 +53,7 @@ struct RayHit
 };
 
 uniform CameraInfo cameraInfo;
-uniform int u_indexCount;
+uniform int u_meshCount;
 
 vec3 PixelRayPos(uint x, uint y, float width, float height)
 {
@@ -181,13 +192,19 @@ RayHit CastRay(Ray ray)
     hit.dist = 10000000.0f;
     hit.hit = false;
 
-    for (int i=0; i<u_indexCount; i+=3)
-    {
-        RayHit newHit = RayTriangle(ray, vertices[indices[i]], vertices[indices[i+1]], vertices[indices[i+2]]);
+    // FOR EACH MESH
+    for (int m = 0; m < u_meshCount; m++) {
+        uint verticesStart = meshPartitions[m].verticesStart;
+        uint indicesStart = meshPartitions[m].indicesStart;
+        uint count = meshPartitions[m].indicesCount;
 
-        if (newHit.dist < hit.dist)
+        for (int i = 0; i < count; i += 3) 
         {
-            hit = newHit;
+            RayHit newHit = RayTriangle(ray, 
+                vertices[verticesStart + indices[indicesStart + i]], 
+                vertices[verticesStart + indices[indicesStart + i + 1]], 
+                vertices[verticesStart + indices[indicesStart + i + 2]]);
+            if (newHit.dist < hit.dist) hit = newHit;
         }
     }
     return hit;
@@ -198,7 +215,7 @@ vec3 PathTrace(Ray ray, int bounces, float seed)
     vec3 light = vec3(0.0f, 0.0f, 0.0f);
     vec3 rayColour = vec3(1.0f, 1.0f, 1.0f);
 
-    for (int b=0; b<bounces; b++)
+    for (int b=0; b<bounces+1; b++)
     {
         RayHit hit = CastRay(ray);
 
@@ -246,7 +263,7 @@ void main()
     camRay.dir = normalize(camRay.origin - cameraInfo.pos);
 
     float seed = float(gl_GlobalInvocationID.y ^ gl_GlobalInvocationID.y);
-    vec3 colour = ACES(PathTrace(camRay, 3, seed));
+    vec3 colour = ACES(PathTrace(camRay, 2, seed));
 
 
     ivec2 pixelCoords = ivec2(gl_GlobalInvocationID.xy);

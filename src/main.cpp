@@ -12,49 +12,18 @@
 #include <string>
 
 // Project Headers
+#include "quad_renderer.h"
 #include "shader.h"
 #include "mesh.h"
 #include "utils.h"
 #include "ui.h"
 
-void CreateFrameBuffer(unsigned int& FBO, uint32_t& FrameBufferTextureID, unsigned int& RBO, int width, int height)
+struct MeshPartition
 {
-    glGenFramebuffers(1, &FBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-    glGenTextures(1, &FrameBufferTextureID);
-    glBindTexture(GL_TEXTURE_2D, FrameBufferTextureID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width,  height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, FrameBufferTextureID, 0);
-    glGenRenderbuffers(1, &RBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, RBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	glBindTexture(GL_TEXTURE_2D, 0);
-	glBindRenderbuffer(GL_RENDERBUFFER, 0);
-
-}
-
-void ResizeFramebuffer(float width, float height, uint32_t& FrameBufferTextureID, unsigned int& RBO, unsigned int&FBO)
-{
-    // RESIZE THE FRAME BUFFER TEXTURE
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-    glBindTexture(GL_TEXTURE_2D, FrameBufferTextureID);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, FrameBufferTextureID, 0);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    
-    // RESIZE THE RENDER BUFFER
-    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, RBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-}
-
+    uint32_t verticesStart;
+    uint32_t indicesStart;
+    uint32_t indicesCount;
+};
 
 int main()
 {
@@ -92,29 +61,12 @@ int main()
     }
 
     // INITIALISE OPENGL VIEWPORT
-    glViewport(0, 0, WIDTH, HEIGHT);
+    glViewport(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
 
-    // QUAD VERTEX AND FRAGMENT SHADER
-    std::string vertexShaderSource = LoadShaderFromFile("./shaders/vert.shader");
-    std::string fragmentShaderSource = LoadShaderFromFile("./shaders/frag.shader");
-    unsigned int quadShader = CreateRasterShader(vertexShaderSource, fragmentShaderSource);
-    float quadVertices[] = {
-        -1.0f,  1.0f, 0.0f, 1.0f,
-        -1.0f, -1.0f, 0.0f, 0.0f,
-         1.0f, -1.0f, 1.0f, 0.0f,
-         1.0f,  1.0f, 1.0f, 1.0f};
-    unsigned int quadVAO, quadVBO;
-    glGenVertexArrays(1, &quadVAO);
-    glGenBuffers(1, &quadVBO);
-    glBindVertexArray(quadVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, quadVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
-    glBindVertexArray(0);
-    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    // QUAD REDERING SHADER
+    QuadRenderer qRenderer;
+    qRenderer.PrepareQuadShader();
+    qRenderer.CreateFrameBuffer((int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT);
     
     // PATH TRACING COMPUTE SHADER
     std::string pathtraceShaderSource = LoadShaderFromFile("./shaders/pathtrace.shader");
@@ -131,42 +83,95 @@ int main()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glBindTexture(GL_TEXTURE_2D, 0);
     
-    // FRAME BUFFER SETUP
-    unsigned int FBO, RBO;
-    uint32_t FrameBufferTextureID;
-    CreateFrameBuffer(FBO, FrameBufferTextureID, RBO, WIDTH, HEIGHT);
-
-
+    // CAMERA INFO UNIFORM
     unsigned int camInfoPosLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.pos");
     unsigned int camInfoForwardLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.forward");
     unsigned int camInfoRightLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.right");
     unsigned int camInfoUpLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.up");
     unsigned int camInfoFOVLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.FOV");
 
-    // LOAD SPONZA MESH
+
+    // LOAD MESHES
+    std::vector<Mesh*> meshes;
     Mesh sponza;
-    sponza.LoadOBJ("./models/test.obj");
+    sponza.LoadOBJ("./models/sponza.obj");
+    Mesh sphere;
+    Mesh sphere1;
+    sphere.LoadOBJ("./models/monkey.obj");
+    sphere1.LoadOBJ("./models/plane.obj");
+    meshes.push_back(&sponza);
+    meshes.push_back(&sphere);
 
 
 
-    // Initialization Code
+    std::vector<MeshPartition> meshPartitions;
+    uint32_t vertexStart = 0;
+    uint32_t indexStart = 0;
+    for (const Mesh* mesh : meshes) 
+    {
+        MeshPartition mPart;
+        mPart.verticesStart = vertexStart;
+        mPart.indicesStart = indexStart;
+        mPart.indicesCount = mesh->indices.size();
+        vertexStart += mesh->vertices.size();
+        indexStart += mesh->indices.size();
+        meshPartitions.push_back(mPart);
+    }
+
+    size_t vertexBufferSize = 0;
+    size_t indexBufferSize = 0;
+    for (const Mesh* mesh : meshes) {
+        vertexBufferSize += mesh->vertices.size() * sizeof(Vertex);
+        indexBufferSize += mesh->indices.size() * sizeof(uint32_t);
+    }
+
     glUseProgram(pathtraceShader);
+    glUniform1i(glGetUniformLocation(pathtraceShader, "u_meshCount"), meshes.size());
 
     // VERTEX BUFFER
     unsigned int vertexBuffer;
     glGenBuffers(1, &vertexBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sponza.vertices.size() * sizeof(Vertex), sponza.vertices.data(), GL_STATIC_READ);
+    glBufferStorage(GL_SHADER_STORAGE_BUFFER, vertexBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, vertexBuffer);
+    void* mappedVertexBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, vertexBufferSize, GL_MAP_WRITE_BIT);
 
     // INDEX BUFFER
     unsigned int indexBuffer;
     glGenBuffers(1, &indexBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sponza.indices.size() * sizeof(uint32_t), sponza.indices.data(), GL_STATIC_READ);
+    glBufferStorage(GL_SHADER_STORAGE_BUFFER, indexBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, indexBuffer);
-    glUniform1i(glGetUniformLocation(pathtraceShader, "u_indexCount"), sponza.indices.size());
-    
+    void* mappedIndexBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, indexBufferSize, GL_MAP_WRITE_BIT);
+
+    // PARTITION BUFFER
+    unsigned int partitionBuffer;
+    glGenBuffers(1, &partitionBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, partitionBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(MeshPartition) * meshPartitions.size(), meshPartitions.data(), GL_STATIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, partitionBuffer);
+
+
+    // COPY VERTEX AND INDEX DATA TO THE GPU
+    int vertexOffset = 0;
+    int indexOffset = 0;
+    for (const Mesh* mesh : meshes) 
+    {
+        memcpy((char*)mappedVertexBuffer + vertexOffset, mesh->vertices.data(),
+            mesh->vertices.size() * sizeof(Vertex));
+        memcpy((char*)mappedIndexBuffer + indexOffset, mesh->indices.data(),
+            mesh->indices.size() * sizeof(uint32_t));
+        vertexOffset += mesh->vertices.size() * sizeof(Vertex);
+        indexOffset += mesh->indices.size() * sizeof(uint32_t);
+    }
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBuffer);
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBuffer);
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
+
+
+
+
 
     // }----------{ APPLICATION LOOP }----------{
     while (!glfwWindowShouldClose(window))
@@ -188,7 +193,7 @@ int main()
             VIEWPORT_HEIGHT = HEIGHT * 0.8f;
 
             // RESIZE FRAME BUFFER, OPENGL VIEWPORT AND RENDER TEXTURE
-            ResizeFramebuffer((int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT, FrameBufferTextureID, RBO, FBO);
+            qRenderer.ResizeFramebuffer((int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT);
             glViewport(0, 0, (int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT); 
             glBindTexture(GL_TEXTURE_2D, RenderTexture);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
@@ -203,7 +208,7 @@ int main()
         glUseProgram(pathtraceShader);
 
         // CAMERA UNIFORM
-        glm::vec3 camPos{0.0f, 1.3f, -2.5f};
+        glm::vec3 camPos{0.0f, 10.3f, -7.5f};
         glm::vec3 camForward{0.0f, 0.0f, 1.0f};
         glm::vec3 camRight{1.0f, 0.0f, 0.0f};
         glm::vec3 camUp{0.0f, 1.0f, 0.0f};
@@ -227,16 +232,7 @@ int main()
 
 
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
-        glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glUseProgram(quadShader);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, RenderTexture);
-        glUniform1i(glGetUniformLocation(quadShader, "RenderTexture"), 0);
-        glBindVertexArray(quadVAO);
-        glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-        glBindVertexArray(0);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        qRenderer.RenderToViewport(RenderTexture);
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
 
         PrintGLErrors();
@@ -261,7 +257,7 @@ int main()
         ImGui::BeginChild("Viewport", ImVec2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT), true);
         ImVec2 cursorPos = ImGui::GetCursorScreenPos();
         ImGui::GetWindowDrawList()->AddImage(
-            (ImTextureID)(intptr_t)FrameBufferTextureID,
+            (ImTextureID)(intptr_t)qRenderer.GetFrameBufferTextureID(),
             cursorPos,
             ImVec2(cursorPos.x + VIEWPORT_WIDTH, cursorPos.y + VIEWPORT_HEIGHT),
             ImVec2(0, 1),

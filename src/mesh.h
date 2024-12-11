@@ -100,4 +100,9 @@ struct Mesh
             }
         }
     }
+
+    size_t GetSize() const 
+    {
+        return vertices.size() * sizeof(Vertex) + indices.size() * sizeof(indices);
+    }
 };
