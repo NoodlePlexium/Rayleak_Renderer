@@ -13,15 +13,9 @@
 
 // Project Headers
 #include "shader.h"
+#include "mesh.h"
 #include "utils.h"
 #include "ui.h"
-
-struct Vertex
-{
-    float x, y, z;
-    float nx, ny, nz;
-    float u, v;
-};
 
 void CreateFrameBuffer(unsigned int& FBO, uint32_t& FrameBufferTextureID, unsigned int& RBO, int width, int height)
 {
@@ -43,17 +37,24 @@ void CreateFrameBuffer(unsigned int& FBO, uint32_t& FrameBufferTextureID, unsign
 
 }
 
-void ResizeFramebuffer(float width, float height, uint32_t& FrameBufferTextureID, unsigned int& RBO)
+void ResizeFramebuffer(float width, float height, uint32_t& FrameBufferTextureID, unsigned int& RBO, unsigned int&FBO)
 {
-	glBindTexture(GL_TEXTURE_2D, FrameBufferTextureID);
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, FrameBufferTextureID, 0);
-	glBindRenderbuffer(GL_RENDERBUFFER, RBO);
-	glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
-	glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, RBO);
+    // RESIZE THE FRAME BUFFER TEXTURE
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+    glBindTexture(GL_TEXTURE_2D, FrameBufferTextureID);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, FrameBufferTextureID, 0);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    
+    // RESIZE THE RENDER BUFFER
+    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, width, height);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, RBO);
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 }
+
 
 int main()
 {
@@ -136,9 +137,36 @@ int main()
     CreateFrameBuffer(FBO, FrameBufferTextureID, RBO, WIDTH, HEIGHT);
 
 
+    unsigned int camInfoPosLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.pos");
+    unsigned int camInfoForwardLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.forward");
+    unsigned int camInfoRightLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.right");
+    unsigned int camInfoUpLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.up");
+    unsigned int camInfoFOVLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.FOV");
+
+    // LOAD SPONZA MESH
+    Mesh sponza;
+    sponza.LoadOBJ("./models/test.obj");
 
 
 
+    // Initialization Code
+    glUseProgram(pathtraceShader);
+
+    // VERTEX BUFFER
+    unsigned int vertexBuffer;
+    glGenBuffers(1, &vertexBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sponza.vertices.size() * sizeof(Vertex), sponza.vertices.data(), GL_STATIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, vertexBuffer);
+
+    // INDEX BUFFER
+    unsigned int indexBuffer;
+    glGenBuffers(1, &indexBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sponza.indices.size() * sizeof(uint32_t), sponza.indices.data(), GL_STATIC_READ);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, indexBuffer);
+    glUniform1i(glGetUniformLocation(pathtraceShader, "u_indexCount"), sponza.indices.size());
+    
 
     // }----------{ APPLICATION LOOP }----------{
     while (!glfwWindowShouldClose(window))
@@ -160,31 +188,26 @@ int main()
             VIEWPORT_HEIGHT = HEIGHT * 0.8f;
 
             // RESIZE FRAME BUFFER, OPENGL VIEWPORT AND RENDER TEXTURE
-            ResizeFramebuffer((int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT, FrameBufferTextureID, RBO);
+            ResizeFramebuffer((int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT, FrameBufferTextureID, RBO, FBO);
+            glViewport(0, 0, (int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT); 
             glBindTexture(GL_TEXTURE_2D, RenderTexture);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
             glBindTexture(GL_TEXTURE_2D, 0);
-            glViewport(0, 0, (int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT); 
         }
         UpdateUI();
         glClearColor(0.047f, 0.082f, 0.122f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+        
 
         // }----------{ INVOKE PATH TRACER }----------{
         glUseProgram(pathtraceShader);
 
         // CAMERA UNIFORM
-        glm::vec3 camPos{0.0f, 0.0f, 0.0f};
+        glm::vec3 camPos{0.0f, 1.3f, -2.5f};
         glm::vec3 camForward{0.0f, 0.0f, 1.0f};
         glm::vec3 camRight{1.0f, 0.0f, 0.0f};
         glm::vec3 camUp{0.0f, 1.0f, 0.0f};
         float camFOV = 90.0f;
-        unsigned int camInfoPosLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.pos");
-        unsigned int camInfoForwardLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.forward");
-        unsigned int camInfoRightLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.right");
-        unsigned int camInfoUpLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.up");
-        unsigned int camInfoFOVLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.FOV");
         glUniform3f(camInfoPosLocation, camPos.x, camPos.y, camPos.z);
         glUniform3f(camInfoForwardLocation, camForward.x, camForward.y, camForward.z);
         glUniform3f(camInfoRightLocation, camRight.x, camRight.y, camRight.z);
@@ -193,9 +216,14 @@ int main()
 
         // RENDER TEXTURE
         glBindImageTexture(0, RenderTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8); 
-        glDispatchCompute(VIEWPORT_WIDTH / 1, VIEWPORT_HEIGHT / 1, 1);
+        GLuint numWorkGroupsX = (VIEWPORT_WIDTH + 32) / 32;
+        GLuint numWorkGroupsY = (VIEWPORT_HEIGHT + 32) / 32;
+        glDispatchCompute(numWorkGroupsX, numWorkGroupsY, 1);       
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        glFinish();
         // }----------{ PATH TRACER ENDS }----------{
+
+        PrintGLErrors();
 
 
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
@@ -210,6 +238,8 @@ int main()
         glBindVertexArray(0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
+
+        PrintGLErrors();
 
 
         // }----------{ APP LAYOUT }----------{
