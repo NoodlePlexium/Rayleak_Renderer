@@ -5,28 +5,51 @@
 #define TINYOBJLOADER_IMPLEMENTATION
 #define TINYOBJLOADER_USE_MAPBOX_EARCUT
 #include "tiny_obj_loader.h"
-#include "./glm/glm.hpp"
+#include "glm/glm.hpp"
+
+struct MeshPartition
+{
+    uint32_t verticesStart;
+    uint32_t indicesStart;
+    uint32_t indicesCount;
+    uint32_t materialIndex;
+};
 
 struct Vertex
 {
-    float x, y, z;
-    float nx, ny, nz;
+    alignas(16) glm::vec3 pos;
+    alignas(16) glm::vec3 normal;
     float u, v;
 
     bool operator==(const Vertex& other) const
     {
-        return x == other.x &&
-            y == other.y &&
-            z == other.z &&
-            nx == other.nx &&
-            ny == other.ny &&
-            nz == other.nz && 
+        return pos.x == other.pos.x &&
+            pos.y == other.pos.y &&
+            pos.z == other.pos.z &&
+            normal.x == other.normal.x &&
+            normal.y == other.normal.y &&
+            normal.z == other.normal.z && 
             u == other.u &&
             v == other.v;
     }
 };
 
-template <typename T, typename... Rest> // from: https://stackoverflow.com/a/57595105
+struct Material
+{
+    alignas(16) glm::vec3 colour;
+    float roughness;
+    float emission;
+
+    Material()
+    {
+        colour = glm::vec3(0.8f, 0.8f, 0.8f);
+        roughness = 0.5f;
+        emission = 0.0f;
+    }
+};
+
+// from: https://stackoverflow.com/a/57595105
+template <typename T, typename... Rest> 
 void HashCombine(std::size_t& seed, const T& v, const Rest&... rest) 
 {
     seed ^= std::hash<T>{}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
@@ -38,7 +61,7 @@ struct VertexHasher
     std::size_t operator()(const Vertex& v) const 
     {
         std::size_t seed = 0;
-        HashCombine(seed, v.x, v.y, v.z, v.nx, v.ny, v.nz, v.u, v.v);
+        HashCombine(seed, v.pos.x, v.pos.y, v.pos.z, v.normal.x, v.normal.y, v.normal.z, v.u, v.v);
         return seed;
     }
 };
@@ -47,6 +70,7 @@ struct Mesh
 {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
+    Material material;
     glm::vec3 position;
     glm::vec3 rotation;
     glm::vec3 scale;
@@ -73,16 +97,18 @@ struct Mesh
 
                 if (index.vertex_index >= 0)
                 {
-                    vertex.x = attrib.vertices[3 * index.vertex_index];
-                    vertex.y = attrib.vertices[3 * index.vertex_index + 1];
-                    vertex.z = attrib.vertices[3 * index.vertex_index + 2];
+                    vertex.pos = glm::vec3(
+                        attrib.vertices[3 * index.vertex_index],
+                        attrib.vertices[3 * index.vertex_index + 1],
+                        attrib.vertices[3 * index.vertex_index + 2]);
                 }
 
                 if (index.normal_index >= 0)
                 {
-                    vertex.nx = attrib.normals[3 * index.normal_index];
-                    vertex.ny = attrib.normals[3 * index.normal_index + 1];
-                    vertex.nz = attrib.normals[3 * index.normal_index + 2];
+                    vertex.normal = glm::vec3(
+                        attrib.normals[3 * index.normal_index],
+                        attrib.normals[3 * index.normal_index + 1],
+                        attrib.normals[3 * index.normal_index + 2]);
                 }
 
                 if (index.texcoord_index >= 0)

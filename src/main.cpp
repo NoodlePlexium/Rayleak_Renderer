@@ -4,7 +4,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
-#include "glm/glm.hpp"
+#include "./glm/glm.hpp"
 
 // Standard Library
 #include <iostream>
@@ -12,18 +12,11 @@
 #include <string>
 
 // Project Headers
-#include "quad_renderer.h"
-#include "shader.h"
-#include "mesh.h"
-#include "utils.h"
-#include "ui.h"
-
-struct MeshPartition
-{
-    uint32_t verticesStart;
-    uint32_t indicesStart;
-    uint32_t indicesCount;
-};
+#include "pathtrace_quad_renderer.h"
+#include "pathtrace_shader.h"
+#include "pathtrace_mesh.h"
+#include "pathtrace_debug.h"
+#include "pathtrace_ui.h"
 
 int main()
 {
@@ -31,6 +24,8 @@ int main()
     float HEIGHT = 480;
     float VIEWPORT_WIDTH = WIDTH * 0.8f;
     float VIEWPORT_HEIGHT = HEIGHT * 0.8f;
+    uint32_t frameCount = 0;
+    uint32_t accumulationFrame = 0;
 
     // GLFW INIT CHECK
     if (!glfwInit()) exit(EXIT_FAILURE);
@@ -91,38 +86,49 @@ int main()
     unsigned int camInfoFOVLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.FOV");
 
 
-    // LOAD MESHES
+
+
+    // }----------{ LOAD 3D MESHES }----------{
     std::vector<Mesh*> meshes;
-    Mesh sponza;
-    sponza.LoadOBJ("./models/sponza.obj");
-    Mesh sphere;
-    Mesh sphere1;
-    sphere.LoadOBJ("./models/monkey.obj");
-    sphere1.LoadOBJ("./models/plane.obj");
-    meshes.push_back(&sponza);
-    meshes.push_back(&sphere);
+    Mesh lion;
+    Mesh plane;
+    lion.LoadOBJ("./models/lion.obj");
+    plane.LoadOBJ("./models/plane.obj");
+    lion.material.roughness = 1.0f;
+    plane.material.emission = 5.0f;
+    plane.material.colour = glm::vec3(0.1f, 1.0f, 0.1f);
+    meshes.push_back(&lion);
+    meshes.push_back(&plane);
+    // }----------{ LOAD 3D MESHES }----------{
 
 
 
+
+    // }----------{ SEND MESH DATA TO THE GPU }----------{
     std::vector<MeshPartition> meshPartitions;
     uint32_t vertexStart = 0;
     uint32_t indexStart = 0;
+    uint32_t materialIndex = 0;
     for (const Mesh* mesh : meshes) 
     {
         MeshPartition mPart;
         mPart.verticesStart = vertexStart;
         mPart.indicesStart = indexStart;
         mPart.indicesCount = mesh->indices.size();
+        mPart.materialIndex = materialIndex;
         vertexStart += mesh->vertices.size();
         indexStart += mesh->indices.size();
+        materialIndex += 1;
         meshPartitions.push_back(mPart);
     }
 
     size_t vertexBufferSize = 0;
     size_t indexBufferSize = 0;
+    size_t materialBufferSize = 0;
     for (const Mesh* mesh : meshes) {
         vertexBufferSize += mesh->vertices.size() * sizeof(Vertex);
         indexBufferSize += mesh->indices.size() * sizeof(uint32_t);
+        materialBufferSize += sizeof(Material);
     }
 
     glUseProgram(pathtraceShader);
@@ -144,30 +150,49 @@ int main()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, indexBuffer);
     void* mappedIndexBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, indexBufferSize, GL_MAP_WRITE_BIT);
 
+    // MATERIAL BUFFER
+    unsigned int materialBuffer;
+    glGenBuffers(1, &materialBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, materialBuffer);
+    glBufferStorage(GL_SHADER_STORAGE_BUFFER, materialBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, materialBuffer);
+    void* mappedMaterialBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, materialBufferSize, GL_MAP_WRITE_BIT);
+
     // PARTITION BUFFER
     unsigned int partitionBuffer;
     glGenBuffers(1, &partitionBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, partitionBuffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(MeshPartition) * meshPartitions.size(), meshPartitions.data(), GL_STATIC_READ);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, partitionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, partitionBuffer);
 
-
-    // COPY VERTEX AND INDEX DATA TO THE GPU
-    int vertexOffset = 0;
-    int indexOffset = 0;
+    // COPY VERTEX INDEX AND MATERIAL DATA TO THE GPU
+    uint32_t vertexOffset = 0;
+    uint32_t indexOffset = 0;
+    uint32_t materialOffset = 0;
     for (const Mesh* mesh : meshes) 
     {
         memcpy((char*)mappedVertexBuffer + vertexOffset, mesh->vertices.data(),
             mesh->vertices.size() * sizeof(Vertex));
         memcpy((char*)mappedIndexBuffer + indexOffset, mesh->indices.data(),
             mesh->indices.size() * sizeof(uint32_t));
+        memcpy((char*)mappedMaterialBuffer + materialOffset, &mesh->material,
+            sizeof(Material));
         vertexOffset += mesh->vertices.size() * sizeof(Vertex);
         indexOffset += mesh->indices.size() * sizeof(uint32_t);
+        materialOffset += sizeof(Material);
     }
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBuffer);
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBuffer);
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, materialBuffer);
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
+    // }----------{ SEND MESH DATA TO THE GPU }----------{
+
+
+
+
+
 
 
 
@@ -178,7 +203,7 @@ int main()
     {
         glfwPollEvents();
 
-        // GET GLFW WINDOW DIMENSIONS
+        // }----------{ HANDLE WINDOW RESIZING }----------{
         int windowbufferWidth, windowbufferHeight;
         glfwGetFramebufferSize(window, &windowbufferWidth, &windowbufferHeight);
         const float newWIDTH = float(windowbufferWidth);
@@ -198,7 +223,13 @@ int main()
             glBindTexture(GL_TEXTURE_2D, RenderTexture);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
             glBindTexture(GL_TEXTURE_2D, 0);
+
+            // RESET FRAME ACCUMULATION
+            accumulationFrame = 0;
         }
+        // }----------{ HANDLE WINDOW RESIZING }----------{
+
+
         UpdateUI();
         glClearColor(0.047f, 0.082f, 0.122f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -207,8 +238,8 @@ int main()
         // }----------{ INVOKE PATH TRACER }----------{
         glUseProgram(pathtraceShader);
 
-        // CAMERA UNIFORM
-        glm::vec3 camPos{0.0f, 10.3f, -7.5f};
+            // CAMERA UNIFORM
+        glm::vec3 camPos{0.0f, 0.0f, -2.5f};
         glm::vec3 camForward{0.0f, 0.0f, 1.0f};
         glm::vec3 camRight{1.0f, 0.0f, 0.0f};
         glm::vec3 camUp{0.0f, 1.0f, 0.0f};
@@ -219,8 +250,16 @@ int main()
         glUniform3f(camInfoUpLocation, camUp.x, camUp.y, camUp.z);
         glUniform1f(camInfoFOVLocation, camFOV);
 
+        // FRAME COUNT FOR PSEUDO RANDOMNESS
+        glUniform1ui(glGetUniformLocation(pathtraceShader, "u_frameCount"), frameCount);
+
+        // FRAME ACCUMULATION COUNT
+        glUniform1ui(glGetUniformLocation(pathtraceShader, "u_accumulationFrame"), accumulationFrame);
+
         // RENDER TEXTURE
-        glBindImageTexture(0, RenderTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA8); 
+        glBindImageTexture(0, RenderTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8); 
+
+        // DISPATCH PATH TRACE SHADER
         GLuint numWorkGroupsX = (VIEWPORT_WIDTH + 32) / 32;
         GLuint numWorkGroupsY = (VIEWPORT_HEIGHT + 32) / 32;
         glDispatchCompute(numWorkGroupsX, numWorkGroupsY, 1);       
@@ -228,14 +267,10 @@ int main()
         glFinish();
         // }----------{ PATH TRACER ENDS }----------{
 
-        PrintGLErrors();
-
 
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
         qRenderer.RenderToViewport(RenderTexture);
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
-
-        PrintGLErrors();
 
 
         // }----------{ APP LAYOUT }----------{
@@ -314,6 +349,8 @@ int main()
 
         RenderUI();
         glfwSwapBuffers(window);
+        frameCount += 1;
+        accumulationFrame += 1;
     }
 
     glfwDestroyWindow(window);
