@@ -1,4 +1,4 @@
-// External Libraries
+// EXTERNAL LIBRARIES
 #include <backends/imgui_impl_opengl3.h>
 #include <backends/imgui_impl_glfw.h>
 #include <GL/glew.h>
@@ -6,12 +6,12 @@
 #include <imgui.h>
 #include "./glm/glm.hpp"
 
-// Standard Library
+// STANDARD LIBRARY
 #include <iostream>
 #include <vector>
 #include <string>
 
-// Project Headers
+// PROJECT HEADERS
 #include "pathtrace_quad_renderer.h"
 #include "pathtrace_shader.h"
 #include "pathtrace_mesh.h"
@@ -27,7 +27,7 @@ int main()
     uint32_t frameCount = 0;
     uint32_t accumulationFrame = 0;
 
-    // GLFW INIT CHECK
+    // SETUP A GLFW WINDOW
     if (!glfwInit()) exit(EXIT_FAILURE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -40,7 +40,7 @@ int main()
     }
     glfwMakeContextCurrent(window);
     
-    // IMGUI SETUP
+    // SETUP IMGUI
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -55,7 +55,7 @@ int main()
         return -1;
     }
 
-    // INITIALISE OPENGL VIEWPORT
+    // OPENGL VIEWPORT
     glViewport(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
 
     // QUAD REDERING SHADER
@@ -91,14 +91,37 @@ int main()
     // }----------{ LOAD 3D MESHES }----------{
     std::vector<Mesh*> meshes;
     Mesh lion;
-    Mesh plane;
+    Mesh left_wall;
+    Mesh right_wall;
+    Mesh back_wall;
+    Mesh floor;
+    Mesh roof;
+    Mesh light_plane;
     lion.LoadOBJ("./models/lion.obj");
-    plane.LoadOBJ("./models/plane.obj");
+    left_wall.LoadOBJ("./models/left_wall.obj");
+    right_wall.LoadOBJ("./models/right_wall.obj");
+    back_wall.LoadOBJ("./models/back_wall.obj");
+    floor.LoadOBJ("./models/floor.obj");
+    roof.LoadOBJ("./models/roof.obj");
+
+    left_wall.material.colour = glm::vec3(1.0f, 0.2f, 0.2f);
+    left_wall.material.roughness = 0.0f;
+    right_wall.material.colour = glm::vec3(0.2f, 1.0f, 0.2f);
+    right_wall.material.roughness = 0.0f;
+    floor.material.colour = glm::vec3(0.9f, 0.9f, 0.9f);
+    floor.material.roughness = 0.0f;
+    roof.material.emission = 10.0f;
     lion.material.roughness = 1.0f;
-    plane.material.emission = 5.0f;
-    plane.material.colour = glm::vec3(0.1f, 1.0f, 0.1f);
+    // lion.material.roughness = 0.3f;
+    // lion.material.colour = glm::vec3(0.2f, 0.2f, 1.0f);
+
     meshes.push_back(&lion);
-    meshes.push_back(&plane);
+    meshes.push_back(&left_wall);
+    meshes.push_back(&right_wall);
+    meshes.push_back(&back_wall);
+    meshes.push_back(&floor);
+    meshes.push_back(&roof);
+    meshes.push_back(&light_plane);
     // }----------{ LOAD 3D MESHES }----------{
 
 
@@ -239,7 +262,7 @@ int main()
         glUseProgram(pathtraceShader);
 
             // CAMERA UNIFORM
-        glm::vec3 camPos{0.0f, 0.0f, -2.5f};
+        glm::vec3 camPos{0.0f, 0.0f, -4.5f};
         glm::vec3 camForward{0.0f, 0.0f, 1.0f};
         glm::vec3 camRight{1.0f, 0.0f, 0.0f};
         glm::vec3 camUp{0.0f, 1.0f, 0.0f};
@@ -259,7 +282,7 @@ int main()
         // RENDER TEXTURE
         glBindImageTexture(0, RenderTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8); 
 
-        // DISPATCH PATH TRACE SHADER
+        // RUN PATH TRACE SHADER
         GLuint numWorkGroupsX = (VIEWPORT_WIDTH + 32) / 32;
         GLuint numWorkGroupsY = (VIEWPORT_HEIGHT + 32) / 32;
         glDispatchCompute(numWorkGroupsX, numWorkGroupsY, 1);       
@@ -352,6 +375,11 @@ int main()
         frameCount += 1;
         accumulationFrame += 1;
     }
+
+    glDeleteBuffers(1, &vertexBuffer);
+    glDeleteBuffers(1, &indexBuffer);
+    glDeleteBuffers(1, &materialBuffer);
+    glDeleteBuffers(1, &partitionBuffer);
 
     glfwDestroyWindow(window);
     glfwTerminate();

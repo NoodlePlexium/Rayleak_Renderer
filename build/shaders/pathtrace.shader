@@ -72,27 +72,12 @@ uniform int u_meshCount;
 uniform uint u_frameCount;
 uniform uint u_accumulationFrame;
 
-vec3 PixelRayPos(uint x, uint y, float width, float height)
-{
-    float FOV_Radians = cameraInfo.FOV * 0.01745329f;
-    float aspectRatio = float(width) / float(height);
-    float nearPlane = 0.1f;
-    
-    // VIEWING PLANE
-    float planeHeight = nearPlane * tan(FOV_Radians * 0.5f);
-    float planeWidth = planeHeight * aspectRatio;
 
-    // NORMALISE PIXEL COORDINATES
-    float nx = x / (width - 1.0f);
-    float ny = y / (height - 1.0f);
 
-    vec3 localBL = vec3(-planeWidth * 0.5f, -planeHeight * 0.5f, nearPlane);
-    vec3 localPoint = localBL + vec3(planeWidth * nx, planeHeight * ny, 0.0f);
 
-    // CALCULATE PIXEL COORDINATE IN WORLD SPACE
-    vec3 worldPoint = cameraInfo.pos + cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
-    return worldPoint;
-}
+
+
+
 
 // FROM Sebastian Lague
 // BY // www.pcg-random.org and www.shadertoy.com/view/XlGcRh
@@ -127,6 +112,29 @@ vec3 RandomHemisphereDirection(vec3 normal, uint seed)
         randDir = -randDir;
     }
     return randDir;
+}
+
+vec3 PixelRayPos(uint x, uint y, float width, float height)
+{
+    float FOV_Radians = cameraInfo.FOV * 0.01745329f;
+    float aspectRatio = float(width) / float(height);
+    float nearPlane = 0.1f;
+    
+    // VIEWING PLANE
+    float planeHeight = nearPlane * tan(FOV_Radians * 0.5f);
+    float planeWidth = planeHeight * aspectRatio;
+
+    // NORMALISE PIXEL COORDINATES
+    float nx = x / (width - 1.0f);
+    float ny = y / (height - 1.0f);
+
+    // CALCULATE PIXEL COORDINATE IN PLANE SPACE
+    vec3 localBL = vec3(-planeWidth * 0.5f, -planeHeight * 0.5f, nearPlane);
+    vec3 localPoint = localBL + vec3(planeWidth * nx, planeHeight * ny, 0.0f);
+
+    // CALCULATE PIXEL COORDINATE IN WORLD SPACE
+    vec3 worldPoint = cameraInfo.pos + cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
+    return worldPoint;
 }
 
 RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3, uint MaterialIndex)
@@ -165,8 +173,8 @@ RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3, uint MaterialIndex)
 
     // SET AND RETURN THE HIT INFORMATION
     hit.pos = ray.origin + ray.dir * dist;
-    // hit.normal = normalize(v1.normal * w + v2.normal * u + v3.normal * v); // INTERPOLATE NORMAL USING BARYCENTRIC COORDINATES
-    hit.normal = normalize(cross(edge1, edge2));
+    hit.normal = normalize(v1.normal * w + v2.normal * u + v3.normal * v); // INTERPOLATE NORMAL USING BARYCENTRIC COORDINATES
+    // hit.normal = normalize(cross(edge1, edge2));
     hit.dist = dist;
     hit.hit = true;
     hit.materialIndex = MaterialIndex;
@@ -206,7 +214,7 @@ vec3 PathTrace(Ray ray, int bounces, uint seed)
     vec3 light = vec3(0.0f, 0.0f, 0.0f);
     vec3 rayColour = vec3(1.0f, 1.0f, 1.0f);
 
-    for (int b=0; b<bounces+1; b++)
+    for (int b=0; b<1+bounces; b++)
     {
         RayHit hit = CastRay(ray);
         
@@ -215,23 +223,24 @@ vec3 PathTrace(Ray ray, int bounces, uint seed)
             const Material material = materials[hit.materialIndex];
 
             float cosineFactor = max(0.0f, dot(hit.normal, -ray.dir));
-            light += rayColour * material.colour * material.emission;
+            light += rayColour * material.emission;
             rayColour *= material.colour * cosineFactor;
             
             vec3 diffuseDir = RandomHemisphereDirection(hit.normal, seed + b);
             vec3 specularDir = ray.dir - hit.normal * 2.0f * dot(ray.dir, hit.normal);
             ray.dir = normalize(diffuseDir * material.roughness + specularDir * (1.0f - material.roughness)); 
-            ray.origin = hit.pos + hit.normal * 0.000001f; 
+            ray.origin = hit.pos + hit.normal * 0.0001f; 
         }
         else
         {
-            light += vec3(0.5f, 0.7f, 0.95f) * rayColour;
+            light += vec3(0.5f, 0.7f, 0.95f) * 2.0f * rayColour;
             break;
         }
     }
     return light;
 }
 
+// SIMPLIFIED ACES TONE MAPPING
 vec3 ACES(vec3 colour)
 {
     vec3 numerator = colour * (2.51 * colour + 0.03);
@@ -242,6 +251,7 @@ vec3 ACES(vec3 colour)
 
 void main()
 {   
+    // GET IMAGE DIMENSIONS
     float width = imageSize(renderImage).x;
     float height = imageSize(renderImage).y;
 
@@ -252,12 +262,12 @@ void main()
 
     // GENERATE A PSEUDORANDOM SEED
     uint pixelIndex = gl_GlobalInvocationID.y * uint(width) + gl_GlobalInvocationID.x;
-    uint seed = u_frameCount * 477033743 + pixelIndex * 241022263;
+    uint seed = u_frameCount * 477043 + pixelIndex * 241263;
 
     // TRACE CAMERA TO GET PIXEL COLOUR 
-    vec3 colour = ACES(PathTrace(camRay, 5, seed));
+    vec3 colour = ACES(PathTrace(camRay, 3, seed));
 
-    // APPLY FRAME ACCUMULATION
+    // FRAME ACCUMULATION
     if (u_accumulationFrame == 0) 
     {
         imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(colour, 1.0f));  
