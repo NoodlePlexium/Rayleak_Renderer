@@ -2,5 +2,5 @@
 /lib/glfw/*
 /lib/imgui/*
 /src/glm/*
-/models/*
-/build/models/*
+/models/*.obj
+/build/models/*.obj
