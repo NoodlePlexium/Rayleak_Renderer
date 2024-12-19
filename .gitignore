@@ -4,3 +4,4 @@
 /src/glm/*
 /models/*.obj
 /build/models/*.obj
+/build/app.exe
