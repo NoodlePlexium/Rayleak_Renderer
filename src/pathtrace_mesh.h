@@ -11,8 +11,17 @@ struct MeshPartition
 {
     uint32_t verticesStart;
     uint32_t indicesStart;
-    uint32_t indicesCount;
     uint32_t materialIndex;
+    uint32_t bvhNodeStart;
+};
+
+struct BVH_Node
+{
+    alignas(16) glm::vec3 aabbMin;
+    alignas(16) glm::vec3 aabbMax;
+    uint32_t leftChild, rightChild;
+    uint32_t firstIndex, indexCount;
+    BVH_Node() : leftChild(0), rightChild(0), firstIndex(0), indexCount(0) {}
 };
 
 struct Vertex
@@ -125,6 +134,103 @@ struct Mesh
                 indices.push_back(uniqueVertices[vertex]);
             }
         }
+        
+        BuildBVH();
+    }
+
+    BVH_Node* bvhNodes;
+    uint32_t nodesUsed = 1;
+
+    void BuildBVH()
+    {
+        const uint32_t nodeCount = (indices.size() / 3) * 2 - 1;
+        bvhNodes = new BVH_Node[nodeCount];
+        BVH_Node& root = bvhNodes[0];
+        root.indexCount = indices.size();
+        UpdateNodeBounds(0);
+        SubdivideNode(0, 0);
+
+        // RESIZE bvhNodes TO DISCARD UNUSED NODES
+        BVH_Node* resizedNodes = new BVH_Node[nodesUsed];  
+        std::memcpy(resizedNodes, bvhNodes, nodesUsed * sizeof(BVH_Node));
+        delete[] bvhNodes;
+        bvhNodes = resizedNodes;
+    }
+
+    void UpdateNodeBounds(uint32_t nodeIndex)
+    {
+        BVH_Node& node = bvhNodes[nodeIndex];
+        node.aabbMin = glm::vec3(1e30f);
+        node.aabbMax = glm::vec3(-1e30f);
+        for (uint32_t i=0; i<node.indexCount; i+=3)
+        {
+            Vertex& v1 = vertices[indices[node.firstIndex + i]];
+            Vertex& v2 = vertices[indices[node.firstIndex + i+1]];
+            Vertex& v3 = vertices[indices[node.firstIndex + i+2]];
+            node.aabbMin = glm::min(node.aabbMin, v1.pos);
+            node.aabbMin = glm::min(node.aabbMin, v2.pos);
+            node.aabbMin = glm::min(node.aabbMin, v3.pos);
+            node.aabbMax = glm::max(node.aabbMax, v1.pos);
+            node.aabbMax = glm::max(node.aabbMax, v2.pos);
+            node.aabbMax = glm::max(node.aabbMax, v3.pos);
+        }
+    }
+
+    void SubdivideNode(uint32_t nodeIndex, uint16_t recurse)
+    {
+        BVH_Node& node = bvhNodes[nodeIndex];
+        if (node.indexCount <= 12 || recurse > 32) return;
+
+        // CALCULATE SPLIT AXIS AND POS
+        glm::vec3 nodeBoxDimensions = node.aabbMax - node.aabbMin;
+        uint32_t axis = 0;
+        if (nodeBoxDimensions.y > nodeBoxDimensions.x) axis = 1;
+        if (nodeBoxDimensions.z > nodeBoxDimensions[axis]) axis = 2;
+        float splitPos = node.aabbMin[axis] + nodeBoxDimensions[axis] * 0.5f;
+
+        // ARRANCE INDICES ABOUT THE SPLIT POS
+        uint32_t i = node.firstIndex;
+        uint32_t j = i + node.indexCount - 3;
+        while (i <= j)
+        {
+            glm::vec3 centroid = (vertices[indices[i]].pos + vertices[indices[i + 1]].pos + vertices[indices[i + 2]].pos) * 0.33333f;
+
+            if (centroid[axis] < splitPos) i+=3;
+            else
+            {
+                std::swap(indices[i], indices[j]);
+                std::swap(indices[i+1], indices[j+1]);
+                std::swap(indices[i+2], indices[j+2]);
+                j-=3;
+            }
+        }
+
+        // IF A SPLIT CHILD HAS NO VERTICES
+        uint32_t leftIndexCount = i - node.firstIndex;
+        if (leftIndexCount == 0 || leftIndexCount == node.indexCount){
+            return;
+        }
+
+        // SET NODE ATTRIBUTES
+        uint32_t leftChildIndex = nodesUsed++;
+        uint32_t rightChildIndex = nodesUsed++;
+        bvhNodes[leftChildIndex].firstIndex = node.firstIndex;
+        bvhNodes[leftChildIndex].indexCount = leftIndexCount;
+        bvhNodes[rightChildIndex].firstIndex = i;
+        bvhNodes[rightChildIndex].indexCount = node.indexCount - leftIndexCount;
+        node.leftChild = leftChildIndex;
+        node.rightChild = rightChildIndex;
+        node.indexCount = 0;
+
+        // std::cout << "Left child indices: [" << bvhNodes[leftChildIndex].firstIndex << ", " << bvhNodes[leftChildIndex].indexCount << "]" << std::endl;
+        // std::cout << "Right child indices: [" << bvhNodes[rightChildIndex].firstIndex << ", " << bvhNodes[rightChildIndex].indexCount << "]" << std::endl;
+        // std::cout << "\n";
+
+        // RECURSIVE CALL FOT LEFT AND RIGHT SUB NODES
+        UpdateNodeBounds(leftChildIndex);
+        UpdateNodeBounds(rightChildIndex);
+        SubdivideNode(leftChildIndex, recurse+1);
+        SubdivideNode(rightChildIndex, recurse+1);
     }
 
     size_t GetSize() const 
