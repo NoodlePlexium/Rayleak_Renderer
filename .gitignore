@@ -2,4 +2,4 @@
 /lib/glfw/*
 /lib/imgui/*
 /src/glm/*
-
+/build/app.exe
