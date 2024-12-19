@@ -1,7 +1,7 @@
 #pragma once
 #include <GL/glew.h>
 #include <string>
-#include "pathtrace_shader.h"
+#include "redflare_shader.h"
 
 class QuadRenderer
 {

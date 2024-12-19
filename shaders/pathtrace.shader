@@ -147,7 +147,7 @@ vec3 PixelRayPos(uint x, uint y, float width, float height)
     vec3 localPoint = localBL + vec3(planeWidth * nx, planeHeight * ny, 0.0f);
 
     // CALCULATE PIXEL COORDINATE IN WORLD SPACE
-    vec3 worldPoint = cameraInfo.pos + cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
+    vec3 worldPoint = cameraInfo.pos - cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
     return worldPoint;
 }
 
@@ -328,7 +328,7 @@ void main()
     uint seed = u_frameCount * 477300 + pixelIndex * 241263;
 
     // TRACE CAMERA TO GET PIXEL COLOUR 
-    vec3 colour = ACES(PathTrace(camRay, 2, seed));
+    vec3 colour = ACES(PathTrace(camRay, 3, seed));
 
     // FRAME ACCUMULATION
     vec4 lastFrameColour = imageLoad(renderImage, ivec2(gl_GlobalInvocationID.xy)); 

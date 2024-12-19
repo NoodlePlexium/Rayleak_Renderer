@@ -13,11 +13,12 @@
 #include <chrono>
 
 // PROJECT HEADERS
-#include "pathtrace_quad_renderer.h"
-#include "pathtrace_shader.h"
-#include "pathtrace_mesh.h"
-#include "pathtrace_debug.h"
-#include "pathtrace_ui.h"
+#include "redflare_quad_renderer.h"
+#include "redflare_shader.h"
+#include "redflare_mesh.h"
+#include "redflare_debug.h"
+#include "redflare_ui.h"
+#include "redflare_model_manager.h"
 
 int main()
 {
@@ -34,7 +35,7 @@ int main()
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Raytrace", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "RedFlare Renderer", NULL, NULL);
     if (!window)
     {
         glfwTerminate();
@@ -92,147 +93,14 @@ int main()
 
     // }----------{ LOAD 3D MESHES }----------{
     std::vector<Mesh*> meshes;
-    Mesh lion;
-    Mesh left_wall;
-    Mesh right_wall;
-    Mesh back_wall;
-    Mesh floor;
-    Mesh roof;
-    Mesh light_plane;
-    lion.LoadOBJ("./models/merc.obj");
-    left_wall.LoadOBJ("./models/left_wall.obj");
-    right_wall.LoadOBJ("./models/right_wall.obj");
-    back_wall.LoadOBJ("./models/back_wall.obj");
-    floor.LoadOBJ("./models/floor.obj");
-    roof.LoadOBJ("./models/roof.obj");
-
-    
-
-    left_wall.material.colour = glm::vec3(1.0f, 0.2f, 0.2f);
-    left_wall.material.roughness = 0.0f;
-    right_wall.material.colour = glm::vec3(0.2f, 1.0f, 0.2f);
-    right_wall.material.roughness = 0.0f;
-    floor.material.colour = glm::vec3(0.9f, 0.9f, 0.9f);
-    floor.material.roughness = 0.0f;
-    roof.material.emission = 10.0f;
-    lion.material.roughness = 1.0f;
-    // lion.material.roughness = 0.3f;
-    // lion.material.colour = glm::vec3(0.2f, 0.2f, 1.0f);
-    
-
-    meshes.push_back(&lion);
-    // meshes.push_back(&left_wall);
-    // meshes.push_back(&right_wall);
-    // meshes.push_back(&back_wall);
-    // meshes.push_back(&floor);
-    // meshes.push_back(&roof);
+    LoadOBJ("./models/vw.obj", meshes);
     // }----------{ LOAD 3D MESHES }----------{
 
 
     // }----------{ SEND MESH DATA TO THE GPU }----------{
-    std::vector<MeshPartition> meshPartitions;
-    uint32_t vertexStart = 0;
-    uint32_t indexStart = 0;
-    uint32_t materialIndex = 0;
-    uint32_t bvhStart = 0;
-    for (const Mesh* mesh : meshes) 
-    {
-        MeshPartition mPart;
-        mPart.verticesStart = vertexStart;
-        mPart.indicesStart = indexStart;
-        mPart.materialIndex = materialIndex;
-        mPart.bvhNodeStart = bvhStart;
-        vertexStart += mesh->vertices.size();
-        indexStart += mesh->indices.size();
-        materialIndex += 1;
-        bvhStart += mesh->nodesUsed;
-        meshPartitions.push_back(mPart);
-    }
-
-    size_t vertexBufferSize = 0;
-    size_t indexBufferSize = 0;
-    size_t materialBufferSize = 0;
-    size_t bvhBufferSize = 0;
-    for (const Mesh* mesh : meshes) {
-        vertexBufferSize += mesh->vertices.size() * sizeof(Vertex);
-        indexBufferSize += mesh->indices.size() * sizeof(uint32_t);
-        materialBufferSize += sizeof(Material);
-        bvhBufferSize += mesh->nodesUsed * sizeof(BVH_Node);
-    }
-
-    glUseProgram(pathtraceShader);
-    glUniform1i(glGetUniformLocation(pathtraceShader, "u_meshCount"), meshes.size());
-
-    // VERTEX BUFFER
-    unsigned int vertexBuffer;
-    glGenBuffers(1, &vertexBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBuffer);
-    glBufferStorage(GL_SHADER_STORAGE_BUFFER, vertexBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, vertexBuffer);
-    void* mappedVertexBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, vertexBufferSize, GL_MAP_WRITE_BIT);
-
-    // INDEX BUFFER
-    unsigned int indexBuffer;
-    glGenBuffers(1, &indexBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBuffer);
-    glBufferStorage(GL_SHADER_STORAGE_BUFFER, indexBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, indexBuffer);
-    void* mappedIndexBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, indexBufferSize, GL_MAP_WRITE_BIT);
-
-    // MATERIAL BUFFER
-    unsigned int materialBuffer;
-    glGenBuffers(1, &materialBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, materialBuffer);
-    glBufferStorage(GL_SHADER_STORAGE_BUFFER, materialBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, materialBuffer);
-    void* mappedMaterialBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, materialBufferSize, GL_MAP_WRITE_BIT);
-
-    // BVH BUFFER
-    unsigned int bvhBuffer;
-    glGenBuffers(1, &bvhBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, bvhBuffer);
-    glBufferStorage(GL_SHADER_STORAGE_BUFFER, bvhBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  // Use glBufferStorage instead
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, bvhBuffer);
-    void* mappedBVHBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, bvhBufferSize, GL_MAP_WRITE_BIT);
-
-    // PARTITION BUFFER
-    unsigned int partitionBuffer;
-    glGenBuffers(1, &partitionBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, partitionBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(MeshPartition) * meshPartitions.size(), meshPartitions.data(), GL_STATIC_READ);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, partitionBuffer);
-
-    // COPY VERTEX INDEX AND MATERIAL DATA TO THE GPU
-    uint32_t vertexOffset = 0;
-    uint32_t indexOffset = 0;
-    uint32_t materialOffset = 0;
-    uint32_t bvhOffset = 0;
-    for (const Mesh* mesh : meshes) 
-    {
-        memcpy((char*)mappedVertexBuffer + vertexOffset, mesh->vertices.data(),
-            mesh->vertices.size() * sizeof(Vertex));
-        memcpy((char*)mappedIndexBuffer + indexOffset, mesh->indices.data(),
-            mesh->indices.size() * sizeof(uint32_t));
-        memcpy((char*)mappedMaterialBuffer + materialOffset, &mesh->material,
-            sizeof(Material));
-        memcpy((char*)mappedBVHBuffer + bvhOffset, mesh->bvhNodes,
-            mesh->nodesUsed * sizeof(BVH_Node));
-
-        vertexOffset += mesh->vertices.size() * sizeof(Vertex);
-        indexOffset += mesh->indices.size() * sizeof(uint32_t);
-        materialOffset += sizeof(Material);
-        bvhOffset += mesh->nodesUsed * sizeof(BVH_Node);
-    }
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBuffer);
-    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBuffer);
-    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, materialBuffer);
-    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, bvhBuffer);
-    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
+    ModelManager modelManager;
+    modelManager.CopyMeshDataToGPU(meshes, pathtraceShader);
     // }----------{ SEND MESH DATA TO THE GPU }----------{
-
 
 
 
@@ -283,12 +151,12 @@ int main()
         // }----------{ INVOKE PATH TRACER }----------{
         glUseProgram(pathtraceShader);
 
-            // CAMERA UNIFORM
-        glm::vec3 camPos{0.0f, 1.0f, -4.5f};
+        // CAMERA UNIFORM
+        glm::vec3 camPos{0.0f, 0.9f, -3.9f};
         glm::vec3 camForward{0.0f, 0.0f, 1.0f};
         glm::vec3 camRight{1.0f, 0.0f, 0.0f};
         glm::vec3 camUp{0.0f, 1.0f, 0.0f};
-        float camFOV = 90.0f;
+        float camFOV = 75.0f;
         glUniform3f(camInfoPosLocation, camPos.x, camPos.y, camPos.z);
         glUniform3f(camInfoForwardLocation, camForward.x, camForward.y, camForward.z);
         glUniform3f(camInfoRightLocation, camRight.x, camRight.y, camRight.z);
@@ -309,7 +177,6 @@ int main()
         GLuint numWorkGroupsY = (VIEWPORT_HEIGHT + 32) / 32;
         glDispatchCompute(numWorkGroupsX, numWorkGroupsY, 1);       
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-        glFinish();
         // }----------{ PATH TRACER ENDS }----------{
     
 
@@ -406,11 +273,6 @@ int main()
         auto duration = std::chrono::duration_cast<std::chrono::duration<float>>(end - start);
         frameTime = duration.count();
     }
-
-    glDeleteBuffers(1, &vertexBuffer);
-    glDeleteBuffers(1, &indexBuffer);
-    glDeleteBuffers(1, &materialBuffer);
-    glDeleteBuffers(1, &partitionBuffer);
 
     glfwDestroyWindow(window);
     glfwTerminate();
