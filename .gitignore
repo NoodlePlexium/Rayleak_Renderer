@@ -2,6 +2,5 @@
 /lib/glfw/*
 /lib/imgui/*
 /src/glm/*
-/models/*.obj
-/build/models/*.obj
+.obj
 /build/app.exe
