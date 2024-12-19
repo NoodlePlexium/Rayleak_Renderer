@@ -10,6 +10,7 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <chrono>
 
 // PROJECT HEADERS
 #include "pathtrace_quad_renderer.h"
@@ -26,6 +27,7 @@ int main()
     float VIEWPORT_HEIGHT = HEIGHT * 0.8f;
     uint32_t frameCount = 0;
     uint32_t accumulationFrame = 0;
+    float frameTime = 0.0f;
 
     // SETUP A GLFW WINDOW
     if (!glfwInit()) exit(EXIT_FAILURE);
@@ -97,12 +99,14 @@ int main()
     Mesh floor;
     Mesh roof;
     Mesh light_plane;
-    lion.LoadOBJ("./models/lion.obj");
+    lion.LoadOBJ("./models/merc.obj");
     left_wall.LoadOBJ("./models/left_wall.obj");
     right_wall.LoadOBJ("./models/right_wall.obj");
     back_wall.LoadOBJ("./models/back_wall.obj");
     floor.LoadOBJ("./models/floor.obj");
     roof.LoadOBJ("./models/roof.obj");
+
+    
 
     left_wall.material.colour = glm::vec3(1.0f, 0.2f, 0.2f);
     left_wall.material.roughness = 0.0f;
@@ -114,17 +118,15 @@ int main()
     lion.material.roughness = 1.0f;
     // lion.material.roughness = 0.3f;
     // lion.material.colour = glm::vec3(0.2f, 0.2f, 1.0f);
+    
 
     meshes.push_back(&lion);
-    meshes.push_back(&left_wall);
-    meshes.push_back(&right_wall);
-    meshes.push_back(&back_wall);
-    meshes.push_back(&floor);
-    meshes.push_back(&roof);
-    meshes.push_back(&light_plane);
+    // meshes.push_back(&left_wall);
+    // meshes.push_back(&right_wall);
+    // meshes.push_back(&back_wall);
+    // meshes.push_back(&floor);
+    // meshes.push_back(&roof);
     // }----------{ LOAD 3D MESHES }----------{
-
-
 
 
     // }----------{ SEND MESH DATA TO THE GPU }----------{
@@ -132,26 +134,30 @@ int main()
     uint32_t vertexStart = 0;
     uint32_t indexStart = 0;
     uint32_t materialIndex = 0;
+    uint32_t bvhStart = 0;
     for (const Mesh* mesh : meshes) 
     {
         MeshPartition mPart;
         mPart.verticesStart = vertexStart;
         mPart.indicesStart = indexStart;
-        mPart.indicesCount = mesh->indices.size();
         mPart.materialIndex = materialIndex;
+        mPart.bvhNodeStart = bvhStart;
         vertexStart += mesh->vertices.size();
         indexStart += mesh->indices.size();
         materialIndex += 1;
+        bvhStart += mesh->nodesUsed;
         meshPartitions.push_back(mPart);
     }
 
     size_t vertexBufferSize = 0;
     size_t indexBufferSize = 0;
     size_t materialBufferSize = 0;
+    size_t bvhBufferSize = 0;
     for (const Mesh* mesh : meshes) {
         vertexBufferSize += mesh->vertices.size() * sizeof(Vertex);
         indexBufferSize += mesh->indices.size() * sizeof(uint32_t);
         materialBufferSize += sizeof(Material);
+        bvhBufferSize += mesh->nodesUsed * sizeof(BVH_Node);
     }
 
     glUseProgram(pathtraceShader);
@@ -181,17 +187,26 @@ int main()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, materialBuffer);
     void* mappedMaterialBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, materialBufferSize, GL_MAP_WRITE_BIT);
 
+    // BVH BUFFER
+    unsigned int bvhBuffer;
+    glGenBuffers(1, &bvhBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, bvhBuffer);
+    glBufferStorage(GL_SHADER_STORAGE_BUFFER, bvhBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  // Use glBufferStorage instead
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, bvhBuffer);
+    void* mappedBVHBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, bvhBufferSize, GL_MAP_WRITE_BIT);
+
     // PARTITION BUFFER
     unsigned int partitionBuffer;
     glGenBuffers(1, &partitionBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, partitionBuffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(MeshPartition) * meshPartitions.size(), meshPartitions.data(), GL_STATIC_READ);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, partitionBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, partitionBuffer);
 
     // COPY VERTEX INDEX AND MATERIAL DATA TO THE GPU
     uint32_t vertexOffset = 0;
     uint32_t indexOffset = 0;
     uint32_t materialOffset = 0;
+    uint32_t bvhOffset = 0;
     for (const Mesh* mesh : meshes) 
     {
         memcpy((char*)mappedVertexBuffer + vertexOffset, mesh->vertices.data(),
@@ -200,15 +215,21 @@ int main()
             mesh->indices.size() * sizeof(uint32_t));
         memcpy((char*)mappedMaterialBuffer + materialOffset, &mesh->material,
             sizeof(Material));
+        memcpy((char*)mappedBVHBuffer + bvhOffset, mesh->bvhNodes,
+            mesh->nodesUsed * sizeof(BVH_Node));
+
         vertexOffset += mesh->vertices.size() * sizeof(Vertex);
         indexOffset += mesh->indices.size() * sizeof(uint32_t);
         materialOffset += sizeof(Material);
+        bvhOffset += mesh->nodesUsed * sizeof(BVH_Node);
     }
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBuffer);
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBuffer);
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, materialBuffer);
+    glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, bvhBuffer);
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
     // }----------{ SEND MESH DATA TO THE GPU }----------{
 
@@ -224,6 +245,7 @@ int main()
     // }----------{ APPLICATION LOOP }----------{
     while (!glfwWindowShouldClose(window))
     {
+        auto start = std::chrono::high_resolution_clock::now();
         glfwPollEvents();
 
         // }----------{ HANDLE WINDOW RESIZING }----------{
@@ -262,7 +284,7 @@ int main()
         glUseProgram(pathtraceShader);
 
             // CAMERA UNIFORM
-        glm::vec3 camPos{0.0f, 0.0f, -4.5f};
+        glm::vec3 camPos{0.0f, 1.0f, -4.5f};
         glm::vec3 camForward{0.0f, 0.0f, 1.0f};
         glm::vec3 camRight{1.0f, 0.0f, 0.0f};
         glm::vec3 camUp{0.0f, 1.0f, 0.0f};
@@ -289,7 +311,7 @@ int main()
         glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
         glFinish();
         // }----------{ PATH TRACER ENDS }----------{
-
+    
 
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
         qRenderer.RenderToViewport(RenderTexture);
@@ -321,6 +343,11 @@ int main()
             ImVec2(0, 1),
             ImVec2(1, 0)
         );
+        int frameRate = int((1.0f / frameTime) + 0.5f);
+        std::string frameTimeString = std::to_string(frameRate) + "fps";
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0, 0, 0, 255));
+        ImGui::Text("%s", frameTimeString.c_str());
+        ImGui::PopStyleColor();
         ImGui::EndChild();
         ImGui::PopStyleVar();
         // }----------{ VIEWPORT WINDOW   }----------{
@@ -374,6 +401,10 @@ int main()
         glfwSwapBuffers(window);
         frameCount += 1;
         accumulationFrame += 1;
+
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration = std::chrono::duration_cast<std::chrono::duration<float>>(end - start);
+        frameTime = duration.count();
     }
 
     glDeleteBuffers(1, &vertexBuffer);

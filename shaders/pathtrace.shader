@@ -18,12 +18,22 @@ struct Material
     float emission;
 };
 
+struct BVH_Node
+{
+    vec3 aabbMin;
+    vec3 aabbMax;
+    uint leftChild;
+    uint rightChild;
+    uint firstIndex;
+    uint indexCount;
+};
+
 struct MeshPartition
 {
     uint verticesStart;
     uint indicesStart;
-    uint indicesCount;
     uint materialIndex;
+    uint bvhNodeStart;
 };
 
 struct CameraInfo
@@ -63,7 +73,11 @@ layout(binding = 3) readonly buffer MaterialBuffer {
     Material materials[];
 };
 
-layout(binding = 4) readonly buffer PartitionBuffer {
+layout(binding = 4) readonly buffer BVHBuffer {
+    BVH_Node bvhNodes[];
+};
+
+layout(binding = 5) readonly buffer PartitionBuffer {
     MeshPartition meshPartitions[];
 };
 
@@ -137,7 +151,20 @@ vec3 PixelRayPos(uint x, uint y, float width, float height)
     return worldPoint;
 }
 
-RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3, uint MaterialIndex)
+// adapted from https://jacco.ompf2.com/2022/04/13/how-to-build-a-bvh-part-1-basics/
+float IntersectAABB(Ray ray, vec3 aabbMin, vec3 aabbMax)
+{
+    vec3 tMin = (aabbMin - ray.origin) * (1.0f / ray.dir);
+    vec3 tMax = (aabbMax - ray.origin) * (1.0f / ray.dir);
+    vec3 t1 = min(tMin, tMax);
+    vec3 t2 = max(tMin, tMax);
+    float distFar = min(min(t2.x, t2.y), t2.z);
+    float distNear = max(max(t1.x, t1.y), t1.z);
+    bool hit = distFar >= distNear && distFar > 0.0f;
+    return hit ? distNear : 100000.0f;
+}
+
+RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3)
 {
     // DEFAULT RAY HIT
     RayHit hit;
@@ -151,7 +178,7 @@ RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3, uint MaterialIndex)
     vec3 edge2 = v3.pos - v1.pos;
     vec3 p = cross(ray.dir, edge2);
     float determinant = dot(edge1, p);
-    if (abs(determinant) < 0.000001f)  return hit;
+    if (abs(determinant) < 0.000001f) return hit;
 
     // CALCULATE U BARYCENTRIC COORDINATE
     float inverseDeterminant = 1.0f / determinant;
@@ -177,37 +204,73 @@ RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3, uint MaterialIndex)
     // hit.normal = normalize(cross(edge1, edge2));
     hit.dist = dist;
     hit.hit = true;
-    hit.materialIndex = MaterialIndex;
     return hit;
 }
 
 RayHit CastRay(Ray ray)
 {   
-    // DEFAULT HIT INFORMATION
     RayHit hit;
     hit.dist = 10000000.0f;
     hit.hit = false;
 
     // FOR EACH MESH
-    for (int m = 0; m < u_meshCount; m++) {
-        uint verticesStart = meshPartitions[m].verticesStart;
+    for (int m = 0; m < u_meshCount; m++) 
+    {
         uint indicesStart = meshPartitions[m].indicesStart;
-        uint materialIndex = meshPartitions[m].materialIndex;
-        uint count = meshPartitions[m].indicesCount;
+        uint verticesStart = meshPartitions[m].verticesStart;
+        uint bvhStart = meshPartitions[m].bvhNodeStart;
 
-        // FOR EACH TRIANGLE
-        for (int i = 0; i < count; i += 3) 
+        uint stack[32];
+        int stackIndex = 0;
+        stack[stackIndex] = bvhStart;
+        while(stackIndex >= 0)
         {
-            RayHit newHit = RayTriangle(ray, 
-                vertices[verticesStart + indices[indicesStart + i]], 
-                vertices[verticesStart + indices[indicesStart + i + 1]], 
-                vertices[verticesStart + indices[indicesStart + i + 2]],
-                materialIndex);
-            if (newHit.dist < hit.dist) hit = newHit;
+            BVH_Node node = bvhNodes[stack[stackIndex--]];
+
+            if (node.indexCount == 0)
+            {
+                BVH_Node leftChild = bvhNodes[node.leftChild + bvhStart];
+                BVH_Node rightChild = bvhNodes[node.rightChild + bvhStart];
+
+                float leftBoxDist = IntersectAABB(ray, leftChild.aabbMin, leftChild.aabbMax);
+                float rightBoxDist = IntersectAABB(ray, rightChild.aabbMin, rightChild.aabbMax);
+                
+                if (leftBoxDist > rightBoxDist)
+                {
+                    if (leftBoxDist < hit.dist) stack[++stackIndex] = node.leftChild + bvhStart;
+                    if (rightBoxDist < hit.dist) stack[++stackIndex] = node.rightChild + bvhStart;
+                }
+                else
+                {
+                    if (rightBoxDist < hit.dist) stack[++stackIndex] = node.rightChild + bvhStart;
+                    if (leftBoxDist < hit.dist) stack[++stackIndex] = node.leftChild + bvhStart;
+                }
+            }
+
+            // NODE IS A LEAF: CHECK FOR TRIANGLE INTERSECTION
+            else
+            {
+                // FOR EACH TRIANGLE IN NODE's BOUNDING BOX
+                for (int i = 0; i < node.indexCount; i += 3) 
+                {
+                    uint index = node.firstIndex + indicesStart + i;
+                    RayHit newHit = RayTriangle(
+                        ray, 
+                        vertices[verticesStart + indices[index]], 
+                        vertices[verticesStart + indices[index + 1]], 
+                        vertices[verticesStart + indices[index + 2]]
+                    );
+                    if (newHit.dist < hit.dist) {
+                        hit = newHit;
+                        hit.materialIndex = meshPartitions[m].materialIndex;
+                    }
+                }
+            }
         }
     }
     return hit;
 }
+
 
 vec3 PathTrace(Ray ray, int bounces, uint seed)
 {
@@ -233,7 +296,7 @@ vec3 PathTrace(Ray ray, int bounces, uint seed)
         }
         else
         {
-            light += vec3(0.5f, 0.7f, 0.95f) * 2.0f * rayColour;
+            light += vec3(0.5f, 0.7f, 0.95f) * 1.0f * rayColour;
             break;
         }
     }
@@ -243,10 +306,10 @@ vec3 PathTrace(Ray ray, int bounces, uint seed)
 // SIMPLIFIED ACES TONE MAPPING
 vec3 ACES(vec3 colour)
 {
-    vec3 numerator = colour * (2.51 * colour + 0.03);
-    vec3 denominator = colour * (2.43 * colour + 0.59) + 0.14;
+    vec3 numerator = colour * (2.51f * colour + 0.03f);
+    vec3 denominator = colour * (2.43f * colour + 0.59f) + 0.14f;
     vec3 result = numerator / denominator;
-    return clamp(result, 0.0, 1.0);
+    return clamp(result, 0.0f, 1.0f);
 }
 
 void main()
@@ -262,22 +325,17 @@ void main()
 
     // GENERATE A PSEUDORANDOM SEED
     uint pixelIndex = gl_GlobalInvocationID.y * uint(width) + gl_GlobalInvocationID.x;
-    uint seed = u_frameCount * 477043 + pixelIndex * 241263;
+    uint seed = u_frameCount * 477300 + pixelIndex * 241263;
 
     // TRACE CAMERA TO GET PIXEL COLOUR 
-    vec3 colour = ACES(PathTrace(camRay, 3, seed));
+    vec3 colour = ACES(PathTrace(camRay, 2, seed));
 
     // FRAME ACCUMULATION
-    if (u_accumulationFrame == 0) 
-    {
-        imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(colour, 1.0f));  
-    }
-    else
-    {
-        vec4 lastFrameColour = imageLoad(renderImage, ivec2(gl_GlobalInvocationID.xy)); 
-        float weight = 1.0 / (u_accumulationFrame + 1);
-        vec4 accumulatedCol = lastFrameColour * (1.0 - weight) + vec4(colour, 1.0f) * weight;
-        imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(accumulatedCol.xyz, 1.0f));  
-    }
+    vec4 lastFrameColour = imageLoad(renderImage, ivec2(gl_GlobalInvocationID.xy)); 
+    float weight = 1.0f / (u_accumulationFrame + 1.0f);
+    vec4 accColour = lastFrameColour * (1.0f - weight) + vec4(colour, 1.0f) * weight;
+    accColour = clamp(accColour, 0.0f, 1.0f);
+    imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(accColour.xyz, 1.0f));  
+
 }
 
