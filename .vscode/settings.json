@@ -72,6 +72,7 @@
         "thread": "cpp",
         "xtree": "cpp",
         "unordered_set": "cpp",
-        "filesystem": "cpp"
+        "filesystem": "cpp",
+        "random": "cpp"
     }
 }

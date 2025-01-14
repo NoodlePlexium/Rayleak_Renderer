@@ -1,7 +1,7 @@
 #pragma once
 #include <GL/glew.h>
 #include <string>
-#include "redflare_shader.h"
+#include "raydia_shader.h"
 
 class QuadRenderer
 {

@@ -11,14 +11,16 @@
 #include <vector>
 #include <string>
 #include <chrono>
+#include <random>
 
 // PROJECT HEADERS
-#include "redflare_quad_renderer.h"
-#include "redflare_shader.h"
-#include "redflare_mesh.h"
-#include "redflare_debug.h"
-#include "redflare_ui.h"
-#include "redflare_model_manager.h"
+#include "raydia_quad_renderer.h"
+#include "raydia_shader.h"
+#include "raydia_mesh.h"
+#include "raydia_light.h"
+#include "raydia_debug.h"
+#include "raydia_ui.h"
+#include "raydia_model_manager.h"
 
 int main()
 {
@@ -103,6 +105,60 @@ int main()
     // }----------{ SEND MESH DATA TO THE GPU }----------{
 
 
+    // }----------{ SEND LIGHT DATA TO THE GPU }----------{
+    DirectionalLight sun;
+    std::vector<DirectionalLight> directionalLights;
+    // directionalLights.push_back(sun);
+
+    PointLight pLight;
+    pLight.colour = glm::vec3(1.0f, 0.1f, 0.1f);
+    pLight.position = glm::vec3(-2.0f, 3.5f, 0.0f);
+    pLight.brightness = 2.0f;
+
+    PointLight pLight1;
+    pLight1.colour = glm::vec3(0.1f, 0.1f, 1.0f);
+    pLight1.position = glm::vec3(-2.0f, 3.5f, 1.0f);
+    pLight1.brightness = 2.0f;
+    std::vector<PointLight> pointLights;
+    pointLights.push_back(pLight);
+    pointLights.push_back(pLight1);
+
+    Spotlight spotlight;
+    std::vector<Spotlight> spotlights;
+    spotlight.brightness = 5.0f;
+    spotlight.colour = glm::vec3(1.0f, 1.0f, 0.0f);
+    spotlight.position = glm::vec3(0.0f, 3.5f, 0.0f);
+    spotlight.angle = 30.0f;
+    spotlights.push_back(spotlight);
+
+    glUseProgram(pathtraceShader);
+
+    // DIRECTIONAL LIGHTS
+    unsigned int directionalLightBuffer;
+    glGenBuffers(1, &directionalLightBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, directionalLightBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(DirectionalLight) * directionalLights.size(), directionalLights.data(), GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, directionalLightBuffer);
+    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_directionalLightCount"), directionalLights.size());
+
+    // POINT LIGHTS
+    unsigned int pointLightBuffer;
+    glGenBuffers(1, &pointLightBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, pointLightBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PointLight) * pointLights.size(), pointLights.data(), GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, pointLightBuffer);
+    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_pointLightCount"), pointLights.size());
+
+    // SPOTLIGHTS
+    unsigned int spotlightBuffer;
+    glGenBuffers(1, &spotlightBuffer);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, spotlightBuffer);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(Spotlight) * spotlights.size(), spotlights.data(), GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, spotlightBuffer);
+    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_spotlightCount"), spotlights.size());
+    // }----------{ SEND LIGHT DATA TO THE GPU }----------{
+
+
 
 
 
@@ -152,7 +208,7 @@ int main()
         glUseProgram(pathtraceShader);
 
         // CAMERA UNIFORM
-        glm::vec3 camPos{0.0f, 0.9f, -3.9f};
+        glm::vec3 camPos{0.0f, 0.9f, -4.9f};
         glm::vec3 camForward{0.0f, 0.0f, 1.0f};
         glm::vec3 camRight{1.0f, 0.0f, 0.0f};
         glm::vec3 camUp{0.0f, 1.0f, 0.0f};
@@ -176,7 +232,7 @@ int main()
         GLuint numWorkGroupsX = (VIEWPORT_WIDTH + 32) / 32;
         GLuint numWorkGroupsY = (VIEWPORT_HEIGHT + 32) / 32;
         glDispatchCompute(numWorkGroupsX, numWorkGroupsY, 1);       
-        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+        // glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
         // }----------{ PATH TRACER ENDS }----------{
     
 

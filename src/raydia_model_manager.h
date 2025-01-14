@@ -8,7 +8,7 @@
 #include <string>
 
 // PROJECT HEADERS
-#include "redflare_mesh.h"
+#include "raydia_mesh.h"
 
 
 class ModelManager

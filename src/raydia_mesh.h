@@ -8,7 +8,7 @@
 #define TINYOBJLOADER_USE_MAPBOX_EARCUT
 #include "tiny_obj_loader.h"
 #include "glm/glm.hpp"
-#include "redflare_debug.h"
+#include "raydia_debug.h"
 
 struct MeshPartition
 {
@@ -129,7 +129,7 @@ struct Mesh
     void SubdivideNode(uint32_t nodeIndex, uint16_t recurse)
     {
         BVH_Node& node = bvhNodes[nodeIndex];
-        if (node.indexCount <= 12 || recurse > 32) return;
+        if (node.indexCount <= 24 || recurse > 32) return;
 
         // CALCULATE SPLIT AXIS AND POS
         glm::vec3 nodeBoxDimensions = node.aabbMax - node.aabbMin;

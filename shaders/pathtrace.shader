@@ -18,6 +18,30 @@ struct Material
     float emission;
 };
 
+struct DirectionalLight
+{
+    vec3 direction;
+    vec3 colour;
+    float brightness;
+};
+
+struct PointLight
+{
+    vec3 position;
+    vec3 colour;
+    float brightness;
+};
+
+struct Spotlight
+{
+    vec3 position;
+    vec3 direction;
+    vec3 colour;
+    float brightness;
+    float angle;
+    float falloff;
+};
+
 struct BVH_Node
 {
     vec3 aabbMin;
@@ -81,11 +105,25 @@ layout(binding = 5) readonly buffer PartitionBuffer {
     MeshPartition meshPartitions[];
 };
 
+layout(binding = 6) readonly buffer DirectionalLightBuffer {
+    DirectionalLight directionalLights[];
+};
+
+layout(binding = 7) readonly buffer PointLightBuffer {
+    PointLight pointlights[];
+};
+
+layout(binding = 8) readonly buffer SpotlightLightBuffer {
+    Spotlight spotlights[];
+};
+
 uniform CameraInfo cameraInfo;
 uniform int u_meshCount;
 uniform uint u_frameCount;
 uniform uint u_accumulationFrame;
-
+uniform uint u_directionalLightCount;
+uniform uint u_pointLightCount;
+uniform uint u_spotlightCount;
 
 
 
@@ -97,11 +135,12 @@ uniform uint u_accumulationFrame;
 // BY // www.pcg-random.org and www.shadertoy.com/view/XlGcRh
 float Random(uint seed)
 {
-    uint state = seed * 747796405 + 2891336453;
-    uint result = ((state >> ((state >> 28) + 4)) ^ state) * 277803737;
+    seed = seed * 747796405 + 2891336453;
+    uint result = ((seed >> ((seed >> 28) + 4)) ^ seed) * 277803737;
     result = (result >> 22) ^ result;
-    return result / 4294967295.0f;
+    return result / 4294967295.0;
 }
+
 float RandomValueNormalDistribution(uint seed)
 {
     float theta = 2.0f * 3.1415926 * Random(seed);
@@ -121,11 +160,33 @@ vec3 RandomDirection(uint seed)
 vec3 RandomHemisphereDirection(vec3 normal, uint seed)
 {
     vec3 randDir = RandomDirection(seed);
-    if (dot(randDir, normal) < 0.0f)
-    {
-        randDir = -randDir;
-    }
+    if (dot(randDir, normal) < 0.0f) randDir = -randDir;
     return randDir;
+}
+
+vec3 RandomHemisphereDirectionCosine(vec3 normal, uint seed)
+{
+    float u1 = Random(seed * 942722159);
+    float u2 = Random(seed * 26390311);
+    float r = sqrt(u1);
+    float theta = 2.0f * 3.141592f * u2;
+    float x = r * cos(theta);
+    float y = r * sin(theta);
+    vec3 randDir = vec3(x, y, sqrt(max(0.0f, 1.0f - u1)));
+    if (dot(randDir, normal) < 0.0f) randDir = -randDir;
+    return randDir;
+}
+
+float DegreesToRadians(float degrees)
+{
+    return degrees * 0.01745329f;
+}
+
+float CosineInterpolation(float min, float max, float value)
+{
+    // CONVERT TO RADIANS
+    float radians = ((value - min) / (max - min)) * 1.570796f; 
+    return cos(radians);
 }
 
 vec3 PixelRayPos(uint x, uint y, float width, float height)
@@ -201,7 +262,6 @@ RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3)
     // SET AND RETURN THE HIT INFORMATION
     hit.pos = ray.origin + ray.dir * dist;
     hit.normal = normalize(v1.normal * w + v2.normal * u + v3.normal * v); // INTERPOLATE NORMAL USING BARYCENTRIC COORDINATES
-    // hit.normal = normalize(cross(edge1, edge2));
     hit.dist = dist;
     hit.hit = true;
     return hit;
@@ -271,6 +331,67 @@ RayHit CastRay(Ray ray)
     return hit;
 }
 
+bool ShadowCast(Ray ray, vec3 lightPos)
+{
+    float lightDist = length(lightPos - ray.origin);
+    bool inShadow = false;
+    
+    // FOR EACH MESH
+    for (int m = 0; m < u_meshCount && !inShadow; m++) 
+    {
+        uint indicesStart = meshPartitions[m].indicesStart;
+        uint verticesStart = meshPartitions[m].verticesStart;
+        uint bvhStart = meshPartitions[m].bvhNodeStart;
+
+        uint stack[32];
+        int stackIndex = 0;
+        stack[stackIndex] = bvhStart;
+        while(stackIndex >= 0)
+        {
+            BVH_Node node = bvhNodes[stack[stackIndex--]];
+
+            if (node.indexCount == 0)
+            {
+                BVH_Node leftChild = bvhNodes[node.leftChild + bvhStart];
+                BVH_Node rightChild = bvhNodes[node.rightChild + bvhStart];
+
+                float leftBoxDist = IntersectAABB(ray, leftChild.aabbMin, leftChild.aabbMax);
+                float rightBoxDist = IntersectAABB(ray, rightChild.aabbMin, rightChild.aabbMax);
+                
+                if (leftBoxDist < lightDist) stack[++stackIndex] = node.leftChild + bvhStart;
+                if (rightBoxDist < lightDist) stack[++stackIndex] = node.rightChild + bvhStart;
+            }
+
+            // NODE IS A LEAF: CHECK FOR TRIANGLE INTERSECTION
+            else
+            {
+                // FOR EACH TRIANGLE IN NODE's BOUNDING BOX
+                for (int i = 0; i < node.indexCount; i += 3) 
+                {
+                    uint index = node.firstIndex + indicesStart + i;
+                    RayHit newHit = RayTriangle(
+                        ray, 
+                        vertices[verticesStart + indices[index]], 
+                        vertices[verticesStart + indices[index + 1]], 
+                        vertices[verticesStart + indices[index + 2]]
+                    );
+                    
+                    if (newHit.dist < lightDist) 
+                    {
+                        inShadow = true;
+                        break;
+                    }
+                }
+
+                if (inShadow)
+                    break;
+            }
+        }
+    }
+
+    return inShadow;
+}
+
 
 vec3 PathTrace(Ray ray, int bounces, uint seed)
 {
@@ -283,20 +404,93 @@ vec3 PathTrace(Ray ray, int bounces, uint seed)
         
         if (hit.hit)
         {
-            const Material material = materials[hit.materialIndex];
+            // DIRECTIONAL LIGHT  CONTRIBUTIONS
+            vec3 directionalLightContribution = vec3(0.0f, 0.0f, 0.0f);
+            for (int d=0; d<u_directionalLightCount; d++)
+            {
+                Ray shadowRay;
+                shadowRay.origin = hit.pos + hit.normal * 0.0001f;
+                shadowRay.dir = -directionalLights[d].direction;
+                vec3 lightPosition = shadowRay.origin + shadowRay.dir * 5000.0f;
+                bool inShadow = ShadowCast(shadowRay, lightPosition); 
+                if (!inShadow)
+                {
+                    float surfaceCosineFactor = max(0.0f, dot(hit.normal, shadowRay.dir)); 
+                    directionalLightContribution += surfaceCosineFactor * (directionalLights[d].colour * directionalLights[d].brightness);
+                }
+            }
 
+            // POINT LIGHT'S CONTRIBUTIONS
+            vec3 pointLightContribution = vec3(0.0f, 0.0f, 0.0f);
+            for (int p=0; p<u_pointLightCount; p++)
+            {
+                Ray shadowRay;
+                shadowRay.origin = hit.pos + hit.normal * 0.0001f; 
+                shadowRay.dir = normalize(pointlights[p].position - shadowRay.origin);
+                bool inShadow = ShadowCast(shadowRay, pointlights[p].position);
+                if (!inShadow)
+                {
+                    float lightDist = length(pointlights[p].position - shadowRay.origin);
+                    float surfaceCosineFactor = max(0.0f, dot(hit.normal, shadowRay.dir)); 
+                    pointLightContribution += surfaceCosineFactor * (pointlights[p].colour * pointlights[p].brightness) / (lightDist * lightDist);
+                }
+            }
+
+            // SPOTLIGHT'S CONTRIBUTIONS
+            vec3 spotlightContribution = vec3(0.0f, 0.0f, 0.0f);
+            for (int s=0; s<u_spotlightCount; s++)
+            {
+                Ray shadowRay;
+                shadowRay.origin = hit.pos + hit.normal * 0.0001f; 
+                shadowRay.dir = normalize(spotlights[s].position - shadowRay.origin);
+
+                // SKIP COMPUTATION IF SPOTLIGHT IS NOT VISIBLE FORM SURFACE POINT
+                bool inShadow = ShadowCast(shadowRay, spotlights[s].position);
+                if (inShadow) continue;
+
+                vec3 dirFromSpotlight = normalize(shadowRay.origin - spotlights[s].position);
+
+
+                // ANGLE BETWEEN SPOTLIGHT DIRECTION AND DIRECTION OF LIGHT
+                // RAY EMMITED FROM SPOTLIGHT TO SURFACE POINT
+                float cosTheta = dot(spotlights[s].direction, dirFromSpotlight);
+                float surfaceToSpotlightRadians = acos(cosTheta);
+
+                float spotlightAngleRadians = DegreesToRadians(spotlights[s].angle);
+                float spotlightFalloffRadians = DegreesToRadians(spotlights[s].falloff);
+                float spotlightMaxAngleRadians = spotlightAngleRadians + spotlightFalloffRadians;
+
+                // POINT INSIDE INNER CONE
+                if (surfaceToSpotlightRadians < spotlightAngleRadians)
+                {
+                    float lightDist = length(spotlights[s].position - shadowRay.origin);
+                    float surfaceCosineFactor = max(0.0f, dot(hit.normal, shadowRay.dir)); 
+                    spotlightContribution += surfaceCosineFactor * (spotlights[s].colour * spotlights[s].brightness) / (lightDist * lightDist);
+                }
+
+                // POINT INSIDE CONE FALLOFF
+                else if (surfaceToSpotlightRadians < spotlightMaxAngleRadians)
+                {
+                    float lightDist = length(spotlights[s].position - shadowRay.origin);
+                    float surfaceCosineFactor = max(0.0f, dot(hit.normal, shadowRay.dir)); 
+                    float fallOffFade = CosineInterpolation(spotlightAngleRadians, spotlightMaxAngleRadians, surfaceToSpotlightRadians);
+                    spotlightContribution += surfaceCosineFactor * fallOffFade * (spotlights[s].colour * spotlights[s].brightness) / (lightDist * lightDist);
+                }
+            }
+
+            const Material material = materials[hit.materialIndex];
             float cosineFactor = max(0.0f, dot(hit.normal, -ray.dir));
-            light += rayColour * material.emission;
+            light += rayColour * material.emission + directionalLightContribution + pointLightContribution + spotlightContribution;
             rayColour *= material.colour * cosineFactor;
-            
-            vec3 diffuseDir = RandomHemisphereDirection(hit.normal, seed + b);
+        
+            vec3 diffuseDir = RandomHemisphereDirectionCosine(hit.normal, seed + b);
             vec3 specularDir = ray.dir - hit.normal * 2.0f * dot(ray.dir, hit.normal);
             ray.dir = normalize(diffuseDir * material.roughness + specularDir * (1.0f - material.roughness)); 
-            ray.origin = hit.pos + hit.normal * 0.0001f; 
+            ray.origin = hit.pos + ray.dir * 0.0001f; 
         }
         else
         {
-            light += vec3(0.5f, 0.7f, 0.95f) * 1.0f * rayColour;
+            // light += vec3(0.5f, 0.7f, 0.95f) * 1.0f * rayColour;
             break;
         }
     }
@@ -325,17 +519,15 @@ void main()
 
     // GENERATE A PSEUDORANDOM SEED
     uint pixelIndex = gl_GlobalInvocationID.y * uint(width) + gl_GlobalInvocationID.x;
-    uint seed = u_frameCount * 477300 + pixelIndex * 241263;
+    uint seed = u_frameCount + pixelIndex * uint(width);
 
     // TRACE CAMERA TO GET PIXEL COLOUR 
     vec3 colour = ACES(PathTrace(camRay, 3, seed));
+    // vec3 colour = RandomDirection(seed);
 
     // FRAME ACCUMULATION
-    vec4 lastFrameColour = imageLoad(renderImage, ivec2(gl_GlobalInvocationID.xy)); 
-    float weight = 1.0f / (u_accumulationFrame + 1.0f);
-    vec4 accColour = lastFrameColour * (1.0f - weight) + vec4(colour, 1.0f) * weight;
-    accColour = clamp(accColour, 0.0f, 1.0f);
-    imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(accColour.xyz, 1.0f));  
-
+    vec4 oldAvg = imageLoad(renderImage, ivec2(gl_GlobalInvocationID.xy)); 
+    vec4 newAvg = ((oldAvg * u_accumulationFrame) + vec4(colour.xyz, 1.0f)) / (u_accumulationFrame + 1);
+    imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(newAvg.xyz, 1.0f));   
 }
 
