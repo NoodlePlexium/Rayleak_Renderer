@@ -69,7 +69,7 @@ int main()
     qRenderer.CreateFrameBuffer((int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT);
     
     // PATH TRACING COMPUTE SHADER
-    std::string pathtraceShaderSource = LoadShaderFromFile("./shaders/pathtrace.shader");
+    std::string pathtraceShaderSource = LoadShaderFromFile("./shaders/bidirectional.shader");
     unsigned int pathtraceShader = CreateComputeShader(pathtraceShaderSource);
 
     // RENDER TEXTURE SETUP
@@ -138,7 +138,7 @@ int main()
     glGenBuffers(1, &directionalLightBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, directionalLightBuffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(DirectionalLight) * directionalLights.size(), directionalLights.data(), GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, directionalLightBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, directionalLightBuffer);
     glUniform1ui(glGetUniformLocation(pathtraceShader, "u_directionalLightCount"), directionalLights.size());
 
     // POINT LIGHTS
@@ -146,7 +146,7 @@ int main()
     glGenBuffers(1, &pointLightBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, pointLightBuffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PointLight) * pointLights.size(), pointLights.data(), GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, pointLightBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, pointLightBuffer);
     glUniform1ui(glGetUniformLocation(pathtraceShader, "u_pointLightCount"), pointLights.size());
 
     // SPOTLIGHTS
@@ -154,7 +154,7 @@ int main()
     glGenBuffers(1, &spotlightBuffer);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, spotlightBuffer);
     glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(Spotlight) * spotlights.size(), spotlights.data(), GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, spotlightBuffer);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, spotlightBuffer);
     glUniform1ui(glGetUniformLocation(pathtraceShader, "u_spotlightCount"), spotlights.size());
     // }----------{ SEND LIGHT DATA TO THE GPU }----------{
 
