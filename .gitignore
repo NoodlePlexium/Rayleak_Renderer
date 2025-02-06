@@ -2,6 +2,7 @@
 /lib/glfw/*
 /lib/imgui/*
 /src/glm/*
-*.obj
-*.mtl
-/build/app.exe
+/textures/*
+/models/*
+/build/models/*
+/build/textures/*
