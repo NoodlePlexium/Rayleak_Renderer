@@ -5,8 +5,7 @@ layout (binding = 0, rgba8) uniform image2D renderImage;
 
 struct Vertex
 {
-    vec3 
-    pos;
+    vec3 pos;
     vec3 normal;
     float u, v;
 };
@@ -82,6 +81,17 @@ struct RayHit
     float dist;
     bool hit;
     uint materialIndex;
+    uint boxTests;
+};
+
+struct LightPath
+{
+    vec3 seg_originPoint[10];
+    vec3 seg_originDir[10];
+    vec3 seg_reflectedPoint[10];
+    vec3 seg_reflectedDir[10];
+    vec3 seg_incomingLight[10];
+    uint segmentCount;
 };
 
 
@@ -105,15 +115,19 @@ layout(binding = 5) readonly buffer PartitionBuffer {
     MeshPartition meshPartitions[];
 };
 
-layout(binding = 6) readonly buffer DirectionalLightBuffer {
+layout(binding = 6) readonly buffer EmissionBuffer {
+    uint emissiveMeshPartitionIndices[];
+};
+
+layout(binding = 7) readonly buffer DirectionalLightBuffer {
     DirectionalLight directionalLights[];
 };
 
-layout(binding = 7) readonly buffer PointLightBuffer {
+layout(binding = 8) readonly buffer PointLightBuffer {
     PointLight pointlights[];
 };
 
-layout(binding = 8) readonly buffer SpotlightLightBuffer {
+layout(binding = 9) readonly buffer SpotlightLightBuffer {
     Spotlight spotlights[];
 };
 
@@ -121,6 +135,8 @@ uniform CameraInfo cameraInfo;
 uniform int u_meshCount;
 uniform uint u_frameCount;
 uniform uint u_accumulationFrame;
+uniform uint u_debugMode;
+uniform uint u_bounces;
 uniform uint u_directionalLightCount;
 uniform uint u_pointLightCount;
 uniform uint u_spotlightCount;
@@ -150,9 +166,9 @@ float RandomValueNormalDistribution(uint seed)
 
 vec3 RandomDirection(uint seed)
 {
-    float x = RandomValueNormalDistribution(seed * 957356527);
-    float y = RandomValueNormalDistribution(seed * 821473903);
-    float z = RandomValueNormalDistribution(seed * 618031433);
+    float x = RandomValueNormalDistribution(seed + 863);
+    float y = RandomValueNormalDistribution(seed + 92119);
+    float z = RandomValueNormalDistribution(seed + 64301);
     vec3 randomDir = vec3(x, y, z);
     return normalize(randomDir);
 }
@@ -166,8 +182,8 @@ vec3 RandomHemisphereDirection(vec3 normal, uint seed)
 
 vec3 RandomHemisphereDirectionCosine(vec3 normal, uint seed)
 {
-    float u1 = Random(seed * 942722159);
-    float u2 = Random(seed * 26390311);
+    float u1 = Random(seed + 43237);
+    float u2 = Random(seed + 56519);
     float r = sqrt(u1);
     float theta = 2.0f * 3.141592f * u2;
     float x = r * cos(theta);
@@ -191,7 +207,7 @@ float CosineInterpolation(float min, float max, float value)
 
 vec3 PixelRayPos(uint x, uint y, float width, float height)
 {
-    float FOV_Radians = cameraInfo.FOV * 0.01745329f;
+    float FOV_Radians = DegreesToRadians(cameraInfo.FOV);
     float aspectRatio = float(width) / float(height);
     float nearPlane = 0.1f;
     
@@ -273,6 +289,8 @@ RayHit CastRay(Ray ray)
     hit.dist = 10000000.0f;
     hit.hit = false;
 
+    uint boxTests = 0;
+
     // FOR EACH MESH
     for (int m = 0; m < u_meshCount; m++) 
     {
@@ -294,6 +312,7 @@ RayHit CastRay(Ray ray)
 
                 float leftBoxDist = IntersectAABB(ray, leftChild.aabbMin, leftChild.aabbMax);
                 float rightBoxDist = IntersectAABB(ray, rightChild.aabbMin, rightChild.aabbMax);
+                boxTests += 2;
                 
                 if (leftBoxDist > rightBoxDist)
                 {
@@ -328,6 +347,7 @@ RayHit CastRay(Ray ray)
             }
         }
     }
+    hit.boxTests = boxTests; // FOR BVH DEBUGGING
     return hit;
 }
 
@@ -393,14 +413,20 @@ bool ShadowCast(Ray ray, vec3 lightPos)
 }
 
 
-vec3 PathTrace(Ray ray, int bounces, uint seed)
+vec3 PathTrace(Ray ray, uint bounces, uint seed)
 {
     vec3 light = vec3(0.0f, 0.0f, 0.0f);
     vec3 rayColour = vec3(1.0f, 1.0f, 1.0f);
 
-    for (int b=0; b<1+bounces; b++)
+    if (u_debugMode == 1) bounces = 0;
+    uint boxTests = 0;
+
+    for (uint b=0; b<1+bounces; b++)
     {
         RayHit hit = CastRay(ray);
+
+        // BVH DEBUGGING
+        if (b == 0) boxTests = hit.boxTests;
         
         if (hit.hit)
         {
@@ -453,9 +479,7 @@ vec3 PathTrace(Ray ray, int bounces, uint seed)
 
                 // ANGLE BETWEEN SPOTLIGHT DIRECTION AND DIRECTION OF LIGHT
                 // RAY EMMITED FROM SPOTLIGHT TO SURFACE POINT
-                float cosTheta = dot(spotlights[s].direction, dirFromSpotlight);
-                float surfaceToSpotlightRadians = acos(cosTheta);
-
+                float surfaceToSpotlightRadians = acos(dot(spotlights[s].direction, dirFromSpotlight));
                 float spotlightAngleRadians = DegreesToRadians(spotlights[s].angle);
                 float spotlightFalloffRadians = DegreesToRadians(spotlights[s].falloff);
                 float spotlightMaxAngleRadians = spotlightAngleRadians + spotlightFalloffRadians;
@@ -478,11 +502,13 @@ vec3 PathTrace(Ray ray, int bounces, uint seed)
                 }
             }
 
+            // CALCULATE LIGHT CONTRIBUTION
             const Material material = materials[hit.materialIndex];
             float cosineFactor = max(0.0f, dot(hit.normal, -ray.dir));
             light += rayColour * material.emission + directionalLightContribution + pointLightContribution + spotlightContribution;
             rayColour *= material.colour * cosineFactor;
-        
+            
+            // PREPARE FOR NEXT BOUNCE
             vec3 diffuseDir = RandomHemisphereDirectionCosine(hit.normal, seed + b);
             vec3 specularDir = ray.dir - hit.normal * 2.0f * dot(ray.dir, hit.normal);
             ray.dir = normalize(diffuseDir * material.roughness + specularDir * (1.0f - material.roughness)); 
@@ -490,10 +516,12 @@ vec3 PathTrace(Ray ray, int bounces, uint seed)
         }
         else
         {
-            // light += vec3(0.5f, 0.7f, 0.95f) * 1.0f * rayColour;
+            light += vec3(0.5f, 0.7f, 0.95f) * 1.0f * rayColour;
             break;
         }
     }
+
+    if (u_debugMode == 1) light = vec3(float(boxTests) / 400.0f, 0.0f, 0.0f);   
     return light;
 }
 
@@ -519,11 +547,10 @@ void main()
 
     // GENERATE A PSEUDORANDOM SEED
     uint pixelIndex = gl_GlobalInvocationID.y * uint(width) + gl_GlobalInvocationID.x;
-    uint seed = u_frameCount + pixelIndex * uint(width);
-
-    // TRACE CAMERA TO GET PIXEL COLOUR 
-    vec3 colour = ACES(PathTrace(camRay, 3, seed));
-    // vec3 colour = RandomDirection(seed);
+    uint seed = u_frameCount * uint(width) * uint(height) + pixelIndex;
+    
+    // TRACE CAMERA TO GET PIXEL COLOUR
+    vec3 colour = ACES(PathTrace(camRay, u_bounces, seed));
 
     // FRAME ACCUMULATION
     vec4 oldAvg = imageLoad(renderImage, ivec2(gl_GlobalInvocationID.xy)); 

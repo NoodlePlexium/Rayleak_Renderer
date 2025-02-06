@@ -68,14 +68,14 @@ public:
         glBindRenderbuffer(GL_RENDERBUFFER, 0);
     }
 
-    void RenderToViewport(const unsigned int& RenderTexture)
+    void RenderToViewport(const unsigned int& DisplayTexture)
     {
         glBindFramebuffer(GL_FRAMEBUFFER, FBO);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
         glUseProgram(quadShader);
         glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, RenderTexture);
-        glUniform1i(glGetUniformLocation(quadShader, "RenderTexture"), 0);
+        glBindTexture(GL_TEXTURE_2D, DisplayTexture);
+        glUniform1i(glGetUniformLocation(quadShader, "DisplayTexture"), 0);
         glBindVertexArray(quadVAO);
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
         glBindVertexArray(0);

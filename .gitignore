@@ -3,4 +3,5 @@
 /lib/imgui/*
 /src/glm/*
 *.obj
+*.mtl
 /build/app.exe

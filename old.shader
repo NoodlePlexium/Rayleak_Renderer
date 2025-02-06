@@ -1,6 +1,4 @@
 #version 440 core
-#extension GL_ARB_bindless_texture : enable
-#extension GL_NV_gpu_shader5 : enable
 
 layout (local_size_x = 32, local_size_y = 32) in;
 layout (binding = 0, rgba32f) uniform image2D renderImage;
@@ -20,11 +18,6 @@ struct Material
     float emission;
     float IOR;
     int refractive;
-
-    uint64_t albedoHandle;
-    uint64_t normalHandle;
-    uint64_t roughnessHandle;
-    uint textureFlags;
 };
 
 struct DirectionalLight
@@ -67,7 +60,6 @@ struct MeshPartition
     uint indicesStart;
     uint materialIndex;
     uint bvhNodeStart;
-    mat4x4 inverseTransform;
 };
 
 struct EmissiveTriangle
@@ -97,11 +89,11 @@ struct RayHit
 {
     vec3 pos;
     vec3 normal;
-    vec2 uv;
     float dist;
     bool hit;
     bool frontFace;
     uint materialIndex;
+    uint boxTests;
 };
 
 struct LightPathOrigin
@@ -173,8 +165,6 @@ layout(binding = 11) buffer LightPathVertexBuffer {
     PathVertex lightPathVertices[];
 };
 
-uniform uint u_tileX;
-uniform uint u_tileY;
 uniform CameraInfo cameraInfo;
 uniform int u_meshCount;
 uniform uint u_frameCount;
@@ -281,7 +271,7 @@ vec3 PixelRayPos(uint x, uint y, uint width, uint height)
     vec3 localPoint = localBL + vec3(planeWidth * nx, planeHeight * ny, 0.0f);
 
     // CALCULATE PIXEL COORDINATE IN WORLD SPACE
-    vec3 worldPoint = cameraInfo.pos - cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
+    vec3 worldPoint = cameraInfo.pos + cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
     return worldPoint;
 }
 
@@ -364,7 +354,6 @@ RayHit RayTriangle(Ray ray, uint v1_index, uint v2_index, uint v3_index)
     // SET HIT VALUES
     hit.frontFace = dot(ray.dir, normal) < 0.0f;
     hit.normal = hit.frontFace ? normal : -normal;
-    hit.uv = vec2(v1.u, v1.v) * w + vec2(v2.u, v2.v) * u + vec2(v3.u, v3.v) * v;
     hit.dist = dist;
     hit.hit = true;
     return hit;
@@ -394,7 +383,7 @@ RayHit CastRay(Ray ray)
     hit.dist = 10000000.0f;
     hit.hit = false;
 
-    mat4x4 inverseModelTransform;
+    uint boxTests = 0;
 
     // FOR EACH MESH
     for (int m=0; m<u_meshCount; m++) 
@@ -402,12 +391,6 @@ RayHit CastRay(Ray ray)
         uint indicesStart = meshPartitions[m].indicesStart;
         uint verticesStart = meshPartitions[m].verticesStart;
         uint bvhStart = meshPartitions[m].bvhNodeStart;
-
-        // TRANSFORM RAY TO BE IN MESH SPACE
-        Ray transformedRay;
-        transformedRay.origin = (meshPartitions[m].inverseTransform * vec4(ray.origin, 1.0)).xyz;
-        transformedRay.dir = (meshPartitions[m].inverseTransform * vec4(ray.dir, 0.0)).xyz;
-
 
         uint stack[32];
         int stackIndex = 0;
@@ -421,8 +404,9 @@ RayHit CastRay(Ray ray)
                 BVH_Node leftChild = bvhNodes[node.leftChild + bvhStart];
                 BVH_Node rightChild = bvhNodes[node.rightChild + bvhStart];
 
-                float leftBoxDist = IntersectAABB(transformedRay, leftChild.aabbMin, leftChild.aabbMax);
-                float rightBoxDist = IntersectAABB(transformedRay, rightChild.aabbMin, rightChild.aabbMax);
+                float leftBoxDist = IntersectAABB(ray, leftChild.aabbMin, leftChild.aabbMax);
+                float rightBoxDist = IntersectAABB(ray, rightChild.aabbMin, rightChild.aabbMax);
+                boxTests += 2;
                 
                 if (leftBoxDist > rightBoxDist)
                 {
@@ -447,24 +431,20 @@ RayHit CastRay(Ray ray)
                     uint v2_index = verticesStart + indices[index + 1];
                     uint v3_index = verticesStart + indices[index + 2];
                     RayHit newHit = RayTriangle(
-                        transformedRay, 
+                        ray, 
                         v1_index, 
                         v2_index, 
                         v3_index
                     );
-                    if (newHit.dist < hit.dist) 
-                    {
+                    if (newHit.dist < hit.dist) {
                         hit = newHit;
                         hit.materialIndex = meshPartitions[m].materialIndex;
-                        inverseModelTransform = meshPartitions[m].inverseTransform;
                     }
                 }
             }
         }
     }
-    mat3 normalMatrix = transpose(mat3(inverseModelTransform));
-    hit.normal = normalMatrix * hit.normal;
-    hit.pos = (inverse(inverseModelTransform) * vec4(hit.pos, 1.0)).xyz;
+    hit.boxTests = boxTests; // FOR BVH DEBUGGING
     return hit;
 }
 
@@ -480,12 +460,7 @@ bool ShadowCast(Ray ray, vec3 lightPos)
         uint verticesStart = meshPartitions[m].verticesStart;
         uint bvhStart = meshPartitions[m].bvhNodeStart;
 
-        // TRANSFORM RAY TO BE IN MESH SPACE
-        Ray transformedRay;
-        transformedRay.origin = (meshPartitions[m].inverseTransform * vec4(ray.origin, 1.0)).xyz;
-        transformedRay.dir = (meshPartitions[m].inverseTransform * vec4(ray.dir, 0.0)).xyz;
-
-        uint stack[32];
+        uint stack[16];
         int stackIndex = 0;
         stack[stackIndex] = bvhStart;
         while(stackIndex >= 0)
@@ -497,8 +472,8 @@ bool ShadowCast(Ray ray, vec3 lightPos)
                 BVH_Node leftChild = bvhNodes[node.leftChild + bvhStart];
                 BVH_Node rightChild = bvhNodes[node.rightChild + bvhStart];
 
-                float leftBoxDist = IntersectAABB(transformedRay, leftChild.aabbMin, leftChild.aabbMax);
-                float rightBoxDist = IntersectAABB(transformedRay, rightChild.aabbMin, rightChild.aabbMax);
+                float leftBoxDist = IntersectAABB(ray, leftChild.aabbMin, leftChild.aabbMax);
+                float rightBoxDist = IntersectAABB(ray, rightChild.aabbMin, rightChild.aabbMax);
                 
                 if (leftBoxDist < lightDist) stack[++stackIndex] = node.leftChild + bvhStart;
                 if (rightBoxDist < lightDist) stack[++stackIndex] = node.rightChild + bvhStart;
@@ -515,7 +490,7 @@ bool ShadowCast(Ray ray, vec3 lightPos)
                     uint v2_index = verticesStart + indices[index + 1];
                     uint v3_index = verticesStart + indices[index + 2];
                     RayHit newHit = RayTriangle(
-                        transformedRay, 
+                        ray, 
                         v1_index, 
                         v2_index, 
                         v3_index
@@ -674,6 +649,7 @@ int CameraPath(Ray ray, uint bounces, uint pixelIndex, uint seed)
     uint pathIndex = pixelIndex * (bounces+1);
 
     if (u_debugMode == 1) bounces = 0;
+    uint boxTests = 0;
 
     // IF FIRST RAY SEGMENT IS CACHED 
     int cameraVertices = 0;
@@ -693,25 +669,8 @@ int CameraPath(Ray ray, uint bounces, uint pixelIndex, uint seed)
 
             cameraPathVertices[pathIndex + b].surfacePosition = hit.pos;
             cameraPathVertices[pathIndex + b].surfaceNormal = hit.normal;
-
-            // IF MATERIAL HAS AN ALBEDO TEXTURE
-            if ((material.textureFlags & (1 << 0)) != 0) { 
-                vec3 albedo = texture(sampler2D(material.albedoHandle), hit.uv).xyz;
-                cameraPathVertices[pathIndex + b].surfaceColour = albedo * material.colour;
-            }
-            else {
-                cameraPathVertices[pathIndex + b].surfaceColour = material.colour;
-            }
-
-            // IF MATERIAL HAS A ROUGHNESS TEXTURE
-            if ((material.textureFlags & (1 << 2)) != 0) { 
-                float roughness = texture(sampler2D(material.roughnessHandle), hit.uv).x;
-                cameraPathVertices[pathIndex + b].surfaceRoughness = roughness;
-            }
-            else {
-                cameraPathVertices[pathIndex + b].surfaceRoughness = material.roughness;
-            }
-
+            cameraPathVertices[pathIndex + b].surfaceColour = material.colour;
+            cameraPathVertices[pathIndex + b].surfaceRoughness = material.roughness;
             cameraPathVertices[pathIndex + b].surfaceEmission = material.emission;
             cameraPathVertices[pathIndex + b].refractive = material.refractive;
             cameraPathVertices[pathIndex + b].reflectedDir = -ray.dir;
@@ -733,11 +692,10 @@ int CameraPath(Ray ray, uint bounces, uint pixelIndex, uint seed)
                     // REFRACT RAY
                     if (refracted)
                     {
-                        float roughness = cameraPathVertices[pathIndex + b].surfaceRoughness;
                         cameraPathVertices[pathIndex + b].refracted = 1;
                         vec3 refractDir = Refract(-ray.dir, hit.normal, eta, cosTheta);
                         vec3 roughRefractDir = RandomHemisphereDirectionCosine(refractDir, seed + b);
-                        ray.dir = normalize(roughRefractDir * roughness + refractDir * (1.0f - roughness));
+                        ray.dir = normalize(roughRefractDir * material.roughness + refractDir * (1.0f - material.roughness));
                         ray.origin = hit.pos + ray.dir * 0.0001f;
                     }
                 }
@@ -746,10 +704,9 @@ int CameraPath(Ray ray, uint bounces, uint pixelIndex, uint seed)
             // REFLECT RAY
             if (!refracted)
             {
-                float roughness = cameraPathVertices[pathIndex + b].surfaceRoughness;
                 vec3 diffuseDir = RandomHemisphereDirectionCosine(hit.normal, seed + b);
                 vec3 specularDir = ray.dir - hit.normal * 2.0f * dot(ray.dir, hit.normal);
-                ray.dir = normalize(diffuseDir * roughness + specularDir * (1.0f - roughness)); 
+                ray.dir = normalize(diffuseDir * material.roughness + specularDir * (1.0f - material.roughness)); 
                 ray.origin = hit.pos + ray.dir * 0.0001f; 
             }
         }
@@ -899,25 +856,8 @@ int LightPath(uint pixelIndex, uint seed)
             // SET LIGHT PATH VERTEX INFO
             lightPathVertices[pathIndex + b].surfacePosition = hit.pos;
             lightPathVertices[pathIndex + b].surfaceNormal = hit.normal;
-
-            // IF MATERIAL HAS AN ALBEDO TEXTURE
-            if ((material.textureFlags & (1 << 0)) != 0) { 
-                vec3 albedo = texture(sampler2D(material.albedoHandle), hit.uv).xyz;
-                lightPathVertices[pathIndex + b].surfaceColour = albedo * material.colour;
-            }
-            else {
-                lightPathVertices[pathIndex + b].surfaceColour = material.colour;
-            }
-
-            // IF MATERIAL HAS A ROUGHNESS TEXTURE
-            if ((material.textureFlags & (1 << 2)) != 0) { 
-                float roughness = texture(sampler2D(material.roughnessHandle), hit.uv).x;
-                lightPathVertices[pathIndex + b].surfaceRoughness = roughness;
-            }
-            else {
-                lightPathVertices[pathIndex + b].surfaceRoughness = material.roughness;
-            }
-
+            lightPathVertices[pathIndex + b].surfaceColour = material.colour;
+            lightPathVertices[pathIndex + b].surfaceRoughness = material.roughness;
             lightPathVertices[pathIndex + b].surfaceEmission = material.emission;
             lightPathVertices[pathIndex + b].refractive = material.refractive;
             lightPathVertices[pathIndex + b].inside = hit.frontFace ? 0 : 1;
@@ -938,11 +878,10 @@ int LightPath(uint pixelIndex, uint seed)
                     // REFRACT RAY
                     if (refracted)
                     {
-                        const float roughness = cameraPathVertices[pathIndex + b].surfaceRoughness;
                         lightPathVertices[pathIndex + b].refracted = 1;
                         vec3 refractDir = Refract(-ray.dir, hit.normal, eta, cosTheta);
                         vec3 roughRefractDir = RandomHemisphereDirectionCosine(refractDir, seed + b + 382847772);
-                        ray.dir = normalize(roughRefractDir * roughness + refractDir * (1.0f - roughness));
+                        ray.dir = normalize(roughRefractDir * material.roughness + refractDir * (1.0f - material.roughness));
                         ray.origin = hit.pos + ray.dir * 0.0001f;
                     }
                 }
@@ -951,10 +890,9 @@ int LightPath(uint pixelIndex, uint seed)
             // REFLECT RAY
             if (!refracted)
             {
-                const float roughness = cameraPathVertices[pathIndex + b].surfaceRoughness;
                 vec3 diffuseDir = RandomHemisphereDirectionCosine(hit.normal, seed + b + 90249938);
                 vec3 specularDir = ray.dir - hit.normal * 2.0f * dot(ray.dir, hit.normal);
-                ray.dir = normalize(diffuseDir * roughness + specularDir * (1.0f - roughness)); 
+                ray.dir = normalize(diffuseDir * material.roughness + specularDir * (1.0f - material.roughness)); 
                 ray.origin = hit.pos + ray.dir * 0.0001f; 
             }
 
@@ -1166,25 +1104,21 @@ vec3 ACES(vec3 colour)
 
 void main()
 {   
+    // EXIT EARLY IF PIXEL IS NOT VISIBLE
+    if (gl_GlobalInvocationID.x > imageSize(renderImage).x || gl_GlobalInvocationID.y > imageSize(renderImage).y)
+    return;
+
     // GET IMAGE DIMENSIONS
     uint width = imageSize(renderImage).x;
     uint height = imageSize(renderImage).y;
 
-    // GET PIXEL INDEX IN FLATTENED IMAGE COORDINATES
-    uint pX = gl_GlobalInvocationID.x + 32 * u_tileX;
-    uint pY = gl_GlobalInvocationID.y + 32 * u_tileY; 
-    uint pixelIndex = pY * width + pX;
-
-    // EXIT EARLY IF PIXEL IS NOT VISIBLE
-    if (pX > imageSize(renderImage).x || pY > imageSize(renderImage).y)
-    return;
-
     // CREATE CAMERA RAY FOR THIS PIXEL
     Ray camRay;
-    camRay.origin = PixelRayPos(pX, pY, width, height);
+    camRay.origin = PixelRayPos(gl_GlobalInvocationID.x, gl_GlobalInvocationID.y, width, height);
     camRay.dir = normalize(camRay.origin - cameraInfo.pos);
 
     // GENERATE A PSEUDORANDOM SEED
+    uint pixelIndex = gl_GlobalInvocationID.y * width + gl_GlobalInvocationID.x;
     uint seed = u_frameCount * width * height + pixelIndex;
     
     // TRACE CAMERA TO GET PIXEL COLOUR
@@ -1196,12 +1130,12 @@ void main()
     // vec3 colour = EvaluateBidirectional(cameraVertices, lightVertices, pixelIndex, seed);
 
     // FRAME ACCUMULATION
-    vec4 oldAvg = imageLoad(renderImage, ivec2(pX, pY)); 
+    vec4 oldAvg = imageLoad(renderImage, ivec2(gl_GlobalInvocationID.xy)); 
     vec4 newAvg = ((oldAvg * u_accumulationFrame) + vec4(colour.xyz, 1.0f)) / (u_accumulationFrame + 1);
-    imageStore(renderImage, ivec2(pX, pY), vec4(newAvg.xyz, 1.0f));   
+    imageStore(renderImage, ivec2(gl_GlobalInvocationID.xy), vec4(newAvg.xyz, 1.0f));   
 
     // SET DISPLAY IMAGE PIXEL
     vec3 outputColour = ACES(newAvg.xyz);
-    imageStore(displayImage, ivec2(pX, pY), vec4(outputColour.xyz, 1.0f));  
+    imageStore(displayImage, ivec2(gl_GlobalInvocationID.xy), vec4(outputColour.xyz, 1.0f));  
 }
 

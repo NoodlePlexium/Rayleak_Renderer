@@ -11,6 +11,24 @@
 #include "raydia_mesh.h"
 
 
+struct EmissiveTriangle
+{
+    uint32_t index;
+    uint32_t materialIndex;
+    float area;
+    float weight;
+};
+
+// FROM STACK OVERFLOW USER Greg https://math.stackexchange.com/questions/128991/how-to-calculate-the-area-of-a-3d-triangle
+float TriangleArea(const glm::vec3 &v1, const glm::vec3 &v2, const glm::vec3 &v3)
+{
+    glm::vec3 v1v2 = v2 - v1;
+    glm::vec3 v1v3 = v3 - v1;
+    glm::vec3 orthogonal = glm::cross(v1v2, v1v3);
+    float area = glm::length(orthogonal) * 0.5f;
+    return area;
+}
+
 class ModelManager
 {
 public:
@@ -18,18 +36,22 @@ public:
 
     void CopyMeshDataToGPU(const std::vector<Mesh*> &meshes, unsigned int &pathtraceShader)
     {
+
+        // CREATE BUFFER OF MESH PARTITIONS
         std::vector<MeshPartition> meshPartitions;
         uint32_t vertexStart = 0;
         uint32_t indexStart = 0;
         uint32_t materialIndex = 0;
         uint32_t bvhStart = 0;
-        for (const Mesh* mesh : meshes) 
+        for (Mesh* mesh : meshes) 
         {
             MeshPartition mPart;
             mPart.verticesStart = vertexStart;
             mPart.indicesStart = indexStart;
             mPart.materialIndex = materialIndex;
             mPart.bvhNodeStart = bvhStart;
+            mPart.inverseTransform = mesh->GetInverseTransformMat();
+            mesh->materialIndex = materialIndex;
             vertexStart += mesh->vertices.size();
             indexStart += mesh->indices.size();
             materialIndex += 1;
@@ -37,17 +59,46 @@ public:
             meshPartitions.push_back(mPart);
         }
 
+        // CREATE VERTEX, INDEX, MATERIAL, BVH BUFFERS
         size_t vertexBufferSize = 0;
         size_t indexBufferSize = 0;
         size_t materialBufferSize = 0;
         size_t bvhBufferSize = 0;
+        size_t emissiveBufferSize = 0;
+        uint32_t emissiveTriangleCount;
         for (const Mesh* mesh : meshes) {
             vertexBufferSize += mesh->vertices.size() * sizeof(Vertex);
             indexBufferSize += mesh->indices.size() * sizeof(uint32_t);
             materialBufferSize += sizeof(Material);
             bvhBufferSize += mesh->nodesUsed * sizeof(BVH_Node);
+            if (mesh->material.emission > 0.0f) emissiveTriangleCount += mesh->indices.size() / 3;
         }
 
+        // CREATE BUFFER OF EMISSIVE TRIANGLE STRUCTS
+        std::vector<EmissiveTriangle> emissiveTriangleBuffer;
+        emissiveTriangleBuffer.reserve(emissiveTriangleCount);
+        float totalEmissiveArea = 0.0f;
+        indexStart = 0;
+        for (const Mesh* mesh : meshes) {
+            if (mesh->material.emission > 0.0f)
+            {
+                for (int i=0; i<mesh->indices.size(); i+=3) {
+                    EmissiveTriangle eTri;
+                    const Vertex &v1 = mesh->vertices[mesh->indices[i]];
+                    const Vertex &v2 = mesh->vertices[mesh->indices[i+1]];
+                    const Vertex &v3 = mesh->vertices[mesh->indices[i+2]];
+                    eTri.area = TriangleArea(v1.pos, v2.pos, v3.pos);
+                    eTri.materialIndex = mesh->materialIndex; // MATERIAL INDEX
+                    totalEmissiveArea += eTri.area;
+                    eTri.index = indexStart + i;              // INDICE INDEX
+                    emissiveTriangleBuffer.push_back(eTri);
+                }
+            }
+            indexStart += mesh->indices.size();
+        }
+        for (int i=0; i<emissiveTriangleBuffer.size(); ++i) {
+            emissiveTriangleBuffer[i].weight = (emissiveTriangleBuffer[i].area / totalEmissiveArea) * emissiveTriangleCount;
+        }
         glUseProgram(pathtraceShader);
         glUniform1i(glGetUniformLocation(pathtraceShader, "u_meshCount"), meshes.size());
 
@@ -75,7 +126,7 @@ public:
         // BVH BUFFER
         glGenBuffers(1, &bvhBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, bvhBuffer);
-        glBufferStorage(GL_SHADER_STORAGE_BUFFER, bvhBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  // Use glBufferStorage instead
+        glBufferStorage(GL_SHADER_STORAGE_BUFFER, bvhBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, bvhBuffer);
         void* mappedBVHBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, bvhBufferSize, GL_MAP_WRITE_BIT);
 
@@ -84,6 +135,13 @@ public:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, partitionBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(MeshPartition) * meshPartitions.size(), meshPartitions.data(), GL_STATIC_READ);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, partitionBuffer);
+
+        // EMISSION INDEX BUFFER
+        glGenBuffers(1, &emissiveBuffer);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, emissiveBuffer);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(EmissiveTriangle) * emissiveTriangleCount, emissiveTriangleBuffer.data(), GL_STATIC_READ);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, emissiveBuffer);
+        glUniform1ui(glGetUniformLocation(pathtraceShader, "u_emissiveTriangleCount"), emissiveTriangleCount);
 
         // COPY VERTEX INDEX AND MATERIAL DATA TO THE GPU
         uint32_t vertexOffset = 0;
@@ -121,7 +179,9 @@ public:
         glDeleteBuffers(1, &vertexBuffer);
         glDeleteBuffers(1, &indexBuffer);
         glDeleteBuffers(1, &materialBuffer);
+        glDeleteBuffers(1, &bvhBuffer);
         glDeleteBuffers(1, &partitionBuffer);
+        glDeleteBuffers(1, &emissiveBuffer);
     }
 private:
     unsigned int vertexBuffer;
@@ -129,4 +189,5 @@ private:
     unsigned int materialBuffer;
     unsigned int bvhBuffer;
     unsigned int partitionBuffer;
+    unsigned int emissiveBuffer;
 };

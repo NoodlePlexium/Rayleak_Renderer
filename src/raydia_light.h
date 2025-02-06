@@ -29,7 +29,6 @@ struct PointLight
     }
 };
 
-
 struct Spotlight
 {
     alignas(16) glm::vec3 position;

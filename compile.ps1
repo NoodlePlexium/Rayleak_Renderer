@@ -11,14 +11,14 @@ $imguiInclude = "$baseDir\lib\imgui"
 $imguiSource = "$baseDir\lib\imgui" 
 
 # COMPILE SOURCE FILE 
-& clang++ -std=c++17 -c "src\main.cpp" -I"$glewInclude" -I"$glfwInclude" -I"$imguiInclude" -o "main.o"
+& clang++ -std=c++17 -fopenmp -c "src\main.cpp" -I"$glewInclude" -I"$glfwInclude" -I"$imguiInclude" -o "main.o"
 
 # GET PRECOMPILED OBJECT FILES
 $imguiObjectFiles = Get-ChildItem -Path $precompiledDir -Filter "*.o" | ForEach-Object { $_.FullName }
 
 # LINK AND COMPILE TO AN EXECUTIBLE
 & clang++ -o $exePath "main.o" $imguiObjectFiles -L"$glewLib" -L"$glfwLib" -L"$baseDir\lib\imgui" `
--lglew32 -lglfw3 -lopengl32 -lgdi32 -luser32 -lshell32
+-lglew32 -lglfw3 -lopengl32 -lgdi32 -luser32 -lshell32 -fopenmp 
 
 
 

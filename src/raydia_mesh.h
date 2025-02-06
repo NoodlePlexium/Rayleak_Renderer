@@ -3,12 +3,17 @@
 #include <functional>
 #include <unordered_map>
 #include <chrono>
+#include <omp.h>
 
 #define TINYOBJLOADER_IMPLEMENTATION
 #define TINYOBJLOADER_USE_MAPBOX_EARCUT
+#define STB_IMAGE_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 #include "glm/glm.hpp"
+#include "glm/gtc/matrix_transform.hpp"
+#include "glm/gtc/constants.hpp"
 #include "raydia_debug.h"
+#include "stb_image.h"
 
 struct MeshPartition
 {
@@ -16,6 +21,7 @@ struct MeshPartition
     uint32_t indicesStart;
     uint32_t materialIndex;
     uint32_t bvhNodeStart;
+    glm::mat4 inverseTransform;
 };
 
 struct BVH_Node
@@ -32,12 +38,24 @@ struct Material
     alignas(16) glm::vec3 colour;
     float roughness;
     float emission;
+    float IOR;
+    int refractive;
+    uint64_t albedoHandle;
+    uint64_t normalHandle;
+    uint64_t roughnessHandle;
+    uint32_t textureFlags;
 
     Material()
     {
         colour = glm::vec3(0.8f, 0.8f, 0.8f);
-        roughness = 0.5f;
+        roughness = 1.0f;
         emission = 0.0f;
+        IOR = 1.45;
+        refractive = 0;
+        albedoHandle = -1;
+        normalHandle = -1;
+        roughnessHandle = -1;
+        uint32_t textureFlags = 0;
     }
 };
 
@@ -90,6 +108,21 @@ struct Mesh
 
     BVH_Node* bvhNodes;
     uint32_t nodesUsed = 1;
+    uint32_t materialIndex = 0;
+
+    // Mesh() 
+    // {
+    //     position = glm::vec3(0.0f, 0.0f, 0.0f);
+    //     rotation = glm::vec3(0.0f, 90.0f, 0.0f);
+    //     scale = glm::vec3(1.0f, 1.0f, 1.0f);
+    // }
+
+    void Init()
+    {
+        position = glm::vec3(0.0f, 0.0f, 0.0f);
+        rotation = glm::vec3(0.0f, 90.0f, 0.0f);
+        scale = glm::vec3(1.0f, 1.0f, 1.0f);
+    }
 
     void BuildBVH()
     {
@@ -114,9 +147,9 @@ struct Mesh
         node.aabbMax = glm::vec3(-1e30f);
         for (uint32_t i=0; i<node.indexCount; i+=3)
         {
-            Vertex& v1 = vertices[indices[node.firstIndex + i]];
-            Vertex& v2 = vertices[indices[node.firstIndex + i+1]];
-            Vertex& v3 = vertices[indices[node.firstIndex + i+2]];
+            Vertex &v1 = vertices[indices[node.firstIndex + i]];
+            Vertex &v2 = vertices[indices[node.firstIndex + i+1]];
+            Vertex &v3 = vertices[indices[node.firstIndex + i+2]];
             node.aabbMin = glm::min(node.aabbMin, v1.pos);
             node.aabbMin = glm::min(node.aabbMin, v2.pos);
             node.aabbMin = glm::min(node.aabbMin, v3.pos);
@@ -126,18 +159,74 @@ struct Mesh
         }
     }
 
+    float HalfAreaAABB(const glm::vec3 &aabbMin, const glm::vec3 &aabbMax)
+    {
+        glm::vec3 dims = aabbMax - aabbMin;
+        return dims.x * dims.y + dims.y * dims.z + dims.z * dims.x;
+    }
+
+    float EvaluateSAH(const BVH_Node& node, uint8_t axis, float pos)
+    {
+        glm::vec3 left_AABB_min(1e30f), left_AABB_max(-1e30f);
+        glm::vec3 right_AABB_min(1e30f), right_AABB_max(-1e30f);
+        int leftCount = 0;
+        int rightCount = 0;
+        for (uint32_t i=0; i<node.indexCount; i+=3)
+        {
+            const Vertex &v1 = vertices[indices[node.firstIndex + i]];
+            const Vertex &v2 = vertices[indices[node.firstIndex + i + 1]];
+            const Vertex &v3 = vertices[indices[node.firstIndex + i + 2]];
+            glm::vec3 triangle_center = (v1.pos + v2.pos + v3.pos) * 0.333f;
+            if (triangle_center[axis] < pos)
+            {   
+                left_AABB_min = glm::min(left_AABB_min, v1.pos);
+                left_AABB_min = glm::min(left_AABB_min, v2.pos);
+                left_AABB_min = glm::min(left_AABB_min, v3.pos);
+                left_AABB_max = glm::max(left_AABB_max, v1.pos);
+                left_AABB_max = glm::max(left_AABB_max, v2.pos);
+                left_AABB_max = glm::max(left_AABB_max, v3.pos);
+                leftCount++;
+            }
+            else
+            {
+                right_AABB_min = glm::min(right_AABB_min, v1.pos);
+                right_AABB_min = glm::min(right_AABB_min, v2.pos);
+                right_AABB_min = glm::min(right_AABB_min, v3.pos);
+                right_AABB_max = glm::max(right_AABB_max, v1.pos);
+                right_AABB_max = glm::max(right_AABB_max, v2.pos);
+                right_AABB_max = glm::max(right_AABB_max, v3.pos);
+                rightCount++;
+            }
+        }
+        float cost = leftCount * HalfAreaAABB(left_AABB_min, left_AABB_max) + rightCount * HalfAreaAABB(right_AABB_min, right_AABB_max);
+        return cost > 0.0f ? cost : 1e30f;
+    }
+
     void SubdivideNode(uint32_t nodeIndex, uint16_t recurse)
     {
         BVH_Node& node = bvhNodes[nodeIndex];
-        if (node.indexCount <= 24 || recurse > 32) return;
+        if (node.indexCount <= 12 || recurse > 32) return;
 
-        // CALCULATE SPLIT AXIS AND POS
-        glm::vec3 nodeBoxDimensions = node.aabbMax - node.aabbMin;
-        uint32_t axis = 0;
-        if (nodeBoxDimensions.y > nodeBoxDimensions.x) axis = 1;
-        if (nodeBoxDimensions.z > nodeBoxDimensions[axis]) axis = 2;
-        float splitPos = node.aabbMin[axis] + nodeBoxDimensions[axis] * 0.5f;
-
+        // DETERMINE BEST SPLIT AXIS AND POS
+        int axis = 0;
+        float splitPos = 0.0f;
+        float lowestCost = 1e30f;
+        int splits = 5;
+        for (uint8_t ax=0; ax<3; ++ax)
+        {
+            for (uint32_t i=0; i<=splits; ++i)
+            {
+                glm::vec3 nodeBoxDimensions = node.aabbMax - node.aabbMin;
+                float testPos = node.aabbMin[ax] + nodeBoxDimensions[ax] * (i / static_cast<float>(splits));
+                float cost = EvaluateSAH(node, ax, testPos);
+                if (cost < lowestCost)
+                {
+                    lowestCost = cost;
+                    axis = ax;
+                    splitPos = testPos;
+                }
+            }
+        }
 
         // ARRANGE INDICES ABOUT THE SPLIT POS
         int i = node.firstIndex;
@@ -180,9 +269,105 @@ struct Mesh
         SubdivideNode(rightChildIndex, recurse+1);
     }
 
-    size_t GetSize() const 
+    void LoadAlbedo(std::string filepath)
     {
-        return vertices.size() * sizeof(Vertex) + indices.size() * sizeof(indices);
+        // UNLOAD EXISTING TEXTURE IF IT EXISTS
+        if (material.albedoHandle != -1) glMakeTextureHandleNonResidentARB(material.albedoHandle);
+
+        int width, height, bpp;
+        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 3);
+        if (!localbuffer)
+        {
+            std::cerr << "[LoadAlbedo] Failed! Could not find image at: " << filepath << std::endl;
+            return;
+        }
+
+        unsigned int texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, localbuffer);
+        glGenerateMipmap(GL_TEXTURE_2D); 
+        stbi_image_free(localbuffer);
+
+        material.albedoHandle = glGetTextureHandleARB(texture);
+        material.textureFlags |= (1 << 0);
+
+        glMakeTextureHandleResidentARB(material.albedoHandle);
+    }
+
+    void LoadNormal(std::string filepath)
+    {
+                // UNLOAD EXISTING TEXTURE IF IT EXISTS
+        if (material.normalHandle != -1) glMakeTextureHandleNonResidentARB(material.normalHandle);
+
+        int width, height, bpp;
+        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 3);
+        if (!localbuffer)
+        {
+            std::cerr << "[LoadNormal] Failed! Could not find image at: " << filepath << std::endl;
+            return;
+        }
+
+        unsigned int texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, localbuffer);
+        glGenerateMipmap(GL_TEXTURE_2D); 
+        stbi_image_free(localbuffer);
+
+        material.normalHandle = glGetTextureHandleARB(texture);
+        material.textureFlags |= (1 << 1);
+
+        glMakeTextureHandleResidentARB(material.normalHandle);
+    }
+
+    void LoadRoughness(std::string filepath)
+    {
+                // UNLOAD EXISTING TEXTURE IF IT EXISTS
+        if (material.roughnessHandle != -1) glMakeTextureHandleNonResidentARB(material.roughnessHandle);
+
+        int width, height, bpp;
+        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 1);
+        if (!localbuffer)
+        {
+            std::cerr << "[LoadRoughness] Failed! Could not find image at: " << filepath << std::endl;
+            return;
+        }
+
+        unsigned int texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, localbuffer);
+        glGenerateMipmap(GL_TEXTURE_2D); 
+        stbi_image_free(localbuffer);
+
+        material.roughnessHandle = glGetTextureHandleARB(texture);
+        material.textureFlags |= (1 << 2);
+
+        glMakeTextureHandleResidentARB(material.roughnessHandle);
+    }
+
+    glm::mat4 GetInverseTransformMat()
+    {
+        glm::mat4 transform = glm::mat4(1.0f); // IDENTITY MATRIX
+        transform = glm::translate(transform, position); // TRANSLATE
+        transform = glm::rotate(transform, glm::radians(rotation.x), glm::vec3(1, 0, 0));  // ROTATE
+        transform = glm::rotate(transform, glm::radians(rotation.y), glm::vec3(0, 1, 0));
+        transform = glm::rotate(transform, glm::radians(rotation.z), glm::vec3(0, 0, 1)); 
+        transform = glm::scale(transform, scale); // SCALE
+        return glm::inverse(transform); // INVERT
     }
 };
 
@@ -199,17 +384,18 @@ void LoadOBJ(const std::string& filepath, std::vector<Mesh*>& meshes)
     }
 
     // FOR EACH MESH IN THE FILE
+    Debug::StartTimer();
+    # pragma omp parallel for
     for (const auto &shape : shapes)
     {
         if (shape.mesh.indices.size() == 0) continue;
 
         Mesh* mesh = new Mesh();  // Allocate mesh on the heap
+        mesh->Init();
         mesh->name = shape.name;
         mesh->vertices.reserve(shape.mesh.indices.size()); 
         mesh->indices.reserve(shape.mesh.indices.size());
-        uint32_t verticesUsed = 0;
         uint32_t indicesUsed = 0;
-        std::unordered_map<Vertex, uint32_t, VertexHasher> uniqueVertices{};
 
         for (const auto &index : shape.mesh.indices)
         {
@@ -236,21 +422,15 @@ void LoadOBJ(const std::string& filepath, std::vector<Mesh*>& meshes)
                 vertex.u = attrib.texcoords[2 * index.texcoord_index];
                 vertex.v = attrib.texcoords[2 * index.texcoord_index + 1];
             }
-
-            Debug::ResumeAccum();
-            if (uniqueVertices.count(vertex) == 0) 
-            {
-                uniqueVertices[vertex] = static_cast<uint32_t>(mesh->vertices.size());
-                mesh->vertices.emplace_back(vertex);
-                verticesUsed += 1;
-            }
-
-            mesh->indices.emplace_back(uniqueVertices[vertex]);
+ 
+            mesh->vertices.emplace_back(vertex);
+            mesh->indices.emplace_back(indicesUsed);
+            indicesUsed += 1;
         }
-        mesh->vertices.resize(verticesUsed);
         mesh->BuildBVH();
         meshes.push_back(mesh);  
     }
+    Debug::EndTimer();
 }
 
 
