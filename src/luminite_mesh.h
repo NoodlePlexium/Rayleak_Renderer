@@ -1,10 +1,6 @@
 #pragma once
-#include <vector>
-#include <functional>
-#include <unordered_map>
-#include <chrono>
-#include <omp.h>
 
+// EXTERNAL LIBRARIES
 #define TINYOBJLOADER_IMPLEMENTATION
 #define TINYOBJLOADER_USE_MAPBOX_EARCUT
 #define STB_IMAGE_IMPLEMENTATION
@@ -12,8 +8,18 @@
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/constants.hpp"
-#include "raydia_debug.h"
 #include "stb_image.h"
+
+// STANDARD LIBRARY
+#include <vector>
+#include <functional>
+#include <unordered_map>
+#include <cmath>
+#include <chrono>
+#include <omp.h>
+// PROJECT HEADERS
+
+#include "luminite_debug.h"
 
 struct MeshPartition
 {
@@ -55,7 +61,97 @@ struct Material
         albedoHandle = -1;
         normalHandle = -1;
         roughnessHandle = -1;
-        uint32_t textureFlags = 0;
+        textureFlags = 0;
+    }
+
+    void LoadAlbedo(std::string filepath)
+    {
+        // UNLOAD EXISTING TEXTURE IF IT EXISTS
+        if (albedoHandle != -1) glMakeTextureHandleNonResidentARB(albedoHandle);
+
+        int width, height, bpp;
+        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 3);
+        if (!localbuffer)
+        {
+            std::cerr << "[LoadAlbedo] Failed! Could not find image at: " << filepath << std::endl;
+            return;
+        }
+
+        unsigned int texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, localbuffer);
+        glGenerateMipmap(GL_TEXTURE_2D); 
+        stbi_image_free(localbuffer);
+
+        albedoHandle = glGetTextureHandleARB(texture);
+        textureFlags |= (1 << 0);
+
+        glMakeTextureHandleResidentARB(albedoHandle);
+    }
+
+    void LoadNormal(std::string filepath)
+    {
+        // UNLOAD EXISTING TEXTURE IF IT EXISTS
+        if (normalHandle != -1) glMakeTextureHandleNonResidentARB(normalHandle);
+
+        int width, height, bpp;
+        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 3);
+        if (!localbuffer)
+        {
+            std::cerr << "[LoadNormal] Failed! Could not find image at: " << filepath << std::endl;
+            return;
+        }
+
+        unsigned int texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, localbuffer);
+        glGenerateMipmap(GL_TEXTURE_2D); 
+        stbi_image_free(localbuffer);
+
+        normalHandle = glGetTextureHandleARB(texture);
+        textureFlags |= (1 << 1);
+
+        glMakeTextureHandleResidentARB(normalHandle);
+    }
+
+    void LoadRoughness(std::string filepath)
+    {
+        // UNLOAD EXISTING TEXTURE IF IT EXISTS
+        if (roughnessHandle != -1) glMakeTextureHandleNonResidentARB(roughnessHandle);
+
+        int width, height, bpp;
+        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 1);
+        if (!localbuffer)
+        {
+            std::cerr << "[LoadRoughness] Failed! Could not find image at: " << filepath << std::endl;
+            return;
+        }
+
+        unsigned int texture;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, localbuffer);
+        glGenerateMipmap(GL_TEXTURE_2D); 
+        stbi_image_free(localbuffer);
+
+        roughnessHandle = glGetTextureHandleARB(texture);
+        textureFlags |= (1 << 2);
+
+        glMakeTextureHandleResidentARB(roughnessHandle);
     }
 };
 
@@ -100,7 +196,6 @@ struct Mesh
 {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
-    Material material;
     std::string name;
     glm::vec3 position;
     glm::vec3 rotation;
@@ -110,17 +205,10 @@ struct Mesh
     uint32_t nodesUsed = 1;
     uint32_t materialIndex = 0;
 
-    // Mesh() 
-    // {
-    //     position = glm::vec3(0.0f, 0.0f, 0.0f);
-    //     rotation = glm::vec3(0.0f, 90.0f, 0.0f);
-    //     scale = glm::vec3(1.0f, 1.0f, 1.0f);
-    // }
-
     void Init()
     {
         position = glm::vec3(0.0f, 0.0f, 0.0f);
-        rotation = glm::vec3(0.0f, 90.0f, 0.0f);
+        rotation = glm::vec3(0.0f, 2.0f, 0.0f);
         scale = glm::vec3(1.0f, 1.0f, 1.0f);
     }
 
@@ -202,6 +290,14 @@ struct Mesh
         return cost > 0.0f ? cost : 1e30f;
     }
 
+    int CalculateSplitCount(int max, int min, uint16_t recurse)
+    {   
+        float recurseT = static_cast<float>(recurse) / 32.0f;
+        float range = static_cast<float>(max - min);
+        float splits = static_cast<float>(min) + range * recurseT;
+        return static_cast<int>(splits);
+    }   
+
     void SubdivideNode(uint32_t nodeIndex, uint16_t recurse)
     {
         BVH_Node& node = bvhNodes[nodeIndex];
@@ -211,7 +307,7 @@ struct Mesh
         int axis = 0;
         float splitPos = 0.0f;
         float lowestCost = 1e30f;
-        int splits = 5;
+        int splits = CalculateSplitCount(10, 3, recurse); // OPTIMISATION, FIRST BOUNDING BOXES NEED MORE SPLITS THAN LATER ONES
         for (uint8_t ax=0; ax<3; ++ax)
         {
             for (uint32_t i=0; i<=splits; ++i)
@@ -267,96 +363,6 @@ struct Mesh
         UpdateNodeBounds(rightChildIndex);
         SubdivideNode(leftChildIndex, recurse+1);
         SubdivideNode(rightChildIndex, recurse+1);
-    }
-
-    void LoadAlbedo(std::string filepath)
-    {
-        // UNLOAD EXISTING TEXTURE IF IT EXISTS
-        if (material.albedoHandle != -1) glMakeTextureHandleNonResidentARB(material.albedoHandle);
-
-        int width, height, bpp;
-        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 3);
-        if (!localbuffer)
-        {
-            std::cerr << "[LoadAlbedo] Failed! Could not find image at: " << filepath << std::endl;
-            return;
-        }
-
-        unsigned int texture;
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, localbuffer);
-        glGenerateMipmap(GL_TEXTURE_2D); 
-        stbi_image_free(localbuffer);
-
-        material.albedoHandle = glGetTextureHandleARB(texture);
-        material.textureFlags |= (1 << 0);
-
-        glMakeTextureHandleResidentARB(material.albedoHandle);
-    }
-
-    void LoadNormal(std::string filepath)
-    {
-                // UNLOAD EXISTING TEXTURE IF IT EXISTS
-        if (material.normalHandle != -1) glMakeTextureHandleNonResidentARB(material.normalHandle);
-
-        int width, height, bpp;
-        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 3);
-        if (!localbuffer)
-        {
-            std::cerr << "[LoadNormal] Failed! Could not find image at: " << filepath << std::endl;
-            return;
-        }
-
-        unsigned int texture;
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, localbuffer);
-        glGenerateMipmap(GL_TEXTURE_2D); 
-        stbi_image_free(localbuffer);
-
-        material.normalHandle = glGetTextureHandleARB(texture);
-        material.textureFlags |= (1 << 1);
-
-        glMakeTextureHandleResidentARB(material.normalHandle);
-    }
-
-    void LoadRoughness(std::string filepath)
-    {
-                // UNLOAD EXISTING TEXTURE IF IT EXISTS
-        if (material.roughnessHandle != -1) glMakeTextureHandleNonResidentARB(material.roughnessHandle);
-
-        int width, height, bpp;
-        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 1);
-        if (!localbuffer)
-        {
-            std::cerr << "[LoadRoughness] Failed! Could not find image at: " << filepath << std::endl;
-            return;
-        }
-
-        unsigned int texture;
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, localbuffer);
-        glGenerateMipmap(GL_TEXTURE_2D); 
-        stbi_image_free(localbuffer);
-
-        material.roughnessHandle = glGetTextureHandleARB(texture);
-        material.textureFlags |= (1 << 2);
-
-        glMakeTextureHandleResidentARB(material.roughnessHandle);
     }
 
     glm::mat4 GetInverseTransformMat()
@@ -433,4 +439,11 @@ void LoadOBJ(const std::string& filepath, std::vector<Mesh*>& meshes)
     Debug::EndTimer();
 }
 
-
+uint32_t FindMeshByName(const std::string &name, std::vector<Mesh*>& meshes)
+{
+    for (int i=0; i<meshes.size(); i++)
+    {
+        if (meshes[i]->name == name) return i;
+    }
+    return -1;
+}

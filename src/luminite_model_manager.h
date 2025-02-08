@@ -8,7 +8,7 @@
 #include <string>
 
 // PROJECT HEADERS
-#include "raydia_mesh.h"
+#include "luminite_mesh.h"
 
 
 struct EmissiveTriangle
@@ -32,29 +32,25 @@ float TriangleArea(const glm::vec3 &v1, const glm::vec3 &v2, const glm::vec3 &v3
 class ModelManager
 {
 public:
-    std::vector<Mesh*> meshes;
 
-    void CopyMeshDataToGPU(const std::vector<Mesh*> &meshes, unsigned int &pathtraceShader)
+    void CopyMeshDataToGPU(const std::vector<Mesh*> &meshes, const std::vector<Material> &materials, unsigned int &pathtraceShader)
     {
 
         // CREATE BUFFER OF MESH PARTITIONS
         std::vector<MeshPartition> meshPartitions;
         uint32_t vertexStart = 0;
         uint32_t indexStart = 0;
-        uint32_t materialIndex = 0;
         uint32_t bvhStart = 0;
         for (Mesh* mesh : meshes) 
         {
             MeshPartition mPart;
             mPart.verticesStart = vertexStart;
             mPart.indicesStart = indexStart;
-            mPart.materialIndex = materialIndex;
+            mPart.materialIndex = mesh->materialIndex;
             mPart.bvhNodeStart = bvhStart;
             mPart.inverseTransform = mesh->GetInverseTransformMat();
-            mesh->materialIndex = materialIndex;
             vertexStart += mesh->vertices.size();
             indexStart += mesh->indices.size();
-            materialIndex += 1;
             bvhStart += mesh->nodesUsed;
             meshPartitions.push_back(mPart);
         }
@@ -71,7 +67,7 @@ public:
             indexBufferSize += mesh->indices.size() * sizeof(uint32_t);
             materialBufferSize += sizeof(Material);
             bvhBufferSize += mesh->nodesUsed * sizeof(BVH_Node);
-            if (mesh->material.emission > 0.0f) emissiveTriangleCount += mesh->indices.size() / 3;
+            if (materials[mesh->materialIndex].emission > 0.0f) emissiveTriangleCount += mesh->indices.size() / 3;
         }
 
         // CREATE BUFFER OF EMISSIVE TRIANGLE STRUCTS
@@ -80,7 +76,7 @@ public:
         float totalEmissiveArea = 0.0f;
         indexStart = 0;
         for (const Mesh* mesh : meshes) {
-            if (mesh->material.emission > 0.0f)
+            if (materials[mesh->materialIndex].emission > 0.0f)
             {
                 for (int i=0; i<mesh->indices.size(); i+=3) {
                     EmissiveTriangle eTri;
@@ -146,7 +142,6 @@ public:
         // COPY VERTEX INDEX AND MATERIAL DATA TO THE GPU
         uint32_t vertexOffset = 0;
         uint32_t indexOffset = 0;
-        uint32_t materialOffset = 0;
         uint32_t bvhOffset = 0;
         for (const Mesh* mesh : meshes) 
         {
@@ -154,16 +149,25 @@ public:
                 mesh->vertices.size() * sizeof(Vertex));
             memcpy((char*)mappedIndexBuffer + indexOffset, mesh->indices.data(),
                 mesh->indices.size() * sizeof(uint32_t));
-            memcpy((char*)mappedMaterialBuffer + materialOffset, &mesh->material,
-                sizeof(Material));
             memcpy((char*)mappedBVHBuffer + bvhOffset, mesh->bvhNodes,
                 mesh->nodesUsed * sizeof(BVH_Node));
 
             vertexOffset += mesh->vertices.size() * sizeof(Vertex);
             indexOffset += mesh->indices.size() * sizeof(uint32_t);
-            materialOffset += sizeof(Material);
             bvhOffset += mesh->nodesUsed * sizeof(BVH_Node);
         }
+
+        // COPY MATERIALS TO THE GPU
+        
+        // COPY MATERIALS TO THE GPU
+        uint32_t materialOffset = 0;
+        for (const Material &material : materials)
+        {
+            memcpy((char*)mappedMaterialBuffer + materialOffset, &material,
+                sizeof(Material));
+            materialOffset += sizeof(Material);
+        }
+        
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBuffer);
         glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);  
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBuffer);

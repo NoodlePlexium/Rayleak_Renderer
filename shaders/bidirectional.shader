@@ -179,7 +179,6 @@ uniform CameraInfo cameraInfo;
 uniform int u_meshCount;
 uniform uint u_frameCount;
 uniform uint u_accumulationFrame;
-uniform uint u_pixelCount;
 uniform uint u_debugMode;
 uniform uint u_bounces;
 uniform uint u_light_bounces;
@@ -187,7 +186,7 @@ uniform uint u_directionalLightCount;
 uniform uint u_pointLightCount;
 uniform uint u_spotlightCount;
 uniform uint u_emissiveTriangleCount;
-
+uniform float u_resolution_scale;
 
 
 
@@ -273,15 +272,15 @@ vec3 PixelRayPos(uint x, uint y, uint width, uint height)
     float planeWidth = planeHeight * aspectRatio;
 
     // NORMALISE PIXEL COORDINATES
-    float nx = x / (width - 1.0f);
-    float ny = y / (height - 1.0f);
+    float nx = (x) / (width - 1.0f);
+    float ny = (y) / (height - 1.0f);
 
     // CALCULATE PIXEL COORDINATE IN PLANE SPACE
     vec3 localBL = vec3(-planeWidth * 0.5f, -planeHeight * 0.5f, nearPlane);
     vec3 localPoint = localBL + vec3(planeWidth * nx, planeHeight * ny, 0.0f);
 
     // CALCULATE PIXEL COORDINATE IN WORLD SPACE
-    vec3 worldPoint = cameraInfo.pos - cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
+    vec3 worldPoint = cameraInfo.pos + cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
     return worldPoint;
 }
 
@@ -982,7 +981,7 @@ vec3 EvaluateBidirectional(int cameraVertices, int lightVertices, uint pixelInde
     // HIT SKY - SKIP ALL COMPUTATION AND RETURN SKY COLOUR
     if (cameraPathVertices[camPathIndex].hitSky == 1)
     {
-        return vec3(0.5f, 0.7f, 0.95f);
+        return vec3(0.5f, 0.7f, 0.95f) * 2.0f;
     } 
 
     // EVALUATE LIGHT PATH ILLUMINATION AT EACH VERTEX
@@ -1015,7 +1014,7 @@ vec3 EvaluateBidirectional(int cameraVertices, int lightVertices, uint pixelInde
     {
         if (cameraPathVertices[camPathIndex + i].hitSky == 1)
         {
-            light += vec3(0.5f, 0.7f, 0.95f);
+            light += vec3(0.5f, 0.7f, 0.95f) * 2.0f;
             continue;
         }
 
@@ -1033,29 +1032,25 @@ vec3 EvaluateBidirectional(int cameraVertices, int lightVertices, uint pixelInde
 
         
         vec3 lightPathIllumination = vec3(0.0f, 0.0f, 0.0f);
-        float randSampleVal = Random(seed + i * 23890123) * float(cameraVertices);
-        bool sampleLightVertex = randSampleVal < 1.0f;
-        if (sampleLightVertex)
+        for (int i=1; i<lightVertices; i++)
         {
-            // SAMPLE ONLY ONE RANDOM LIGHT PATH VERTEX (OPTIMISATION)
-            float randLightV = Random(seed + i * 89234783);
-            uint randLightVertex = lightPathIndex + uint(floor(randLightV * (lightVertices - 1))) + 1;
+            uint index = lightPathIndex + i;
         
             Ray shadowRay;
-            shadowRay.dir = normalize(position - lightPathVertices[randLightVertex].surfacePosition);
-            shadowRay.origin = lightPathVertices[randLightVertex].surfacePosition + shadowRay.dir * 0.00001f;
+            shadowRay.dir = normalize(position - lightPathVertices[index].surfacePosition);
+            shadowRay.origin = lightPathVertices[index].surfacePosition + shadowRay.dir * 0.00001f;
 
             if (!ShadowCast(shadowRay, position - shadowRay.dir * 0.0001f))
             {
-                float lightPathVertexDist = length(lightPathVertices[randLightVertex].surfacePosition - position);
+                float lightPathVertexDist = length(lightPathVertices[index].surfacePosition - position);
                 float lightPathVertexDistSquared = lightPathVertexDist * lightPathVertexDist;
-                vec3 dirFromCamSurfaceToLightSurface = normalize(lightPathVertices[randLightVertex].surfacePosition - position);
+                vec3 dirFromCamSurfaceToLightSurface = normalize(lightPathVertices[index].surfacePosition - position);
 
                 // INFO FROM LIGHT PATH VERTEX
-                const vec3 lightPos = lightPathVertices[randLightVertex].surfacePosition;
-                const vec3 prevLightPos = lightPathVertices[randLightVertex - 1].surfacePosition;
-                const vec3 lightNormal = lightPathVertices[randLightVertex].surfaceNormal;
-                const float lightPointRoughness = lightPathVertices[randLightVertex].surfaceRoughness;
+                const vec3 lightPos = lightPathVertices[index].surfacePosition;
+                const vec3 prevLightPos = lightPathVertices[index - 1].surfacePosition;
+                const vec3 lightNormal = lightPathVertices[index].surfaceNormal;
+                const float lightPointRoughness = lightPathVertices[index].surfaceRoughness;
 
 
                 // GET MIRROR REFLECTION DIR
@@ -1081,14 +1076,10 @@ vec3 EvaluateBidirectional(int cameraVertices, int lightVertices, uint pixelInde
                     vec3 dirToLight = normalize(lightPos - position);
                     float cosFactor = max(0.0f, dot(normal, dirToLight)); 
 
-                    lightPathIllumination += cosFactor * (lightPathVertices[randLightVertex].outgoingLight) * lightDensity;
+                    lightPathIllumination += cosFactor * (lightPathVertices[index].outgoingLight) * lightDensity;
                 }
             }
-            lightPathIllumination *= cameraVertices * (lightVertices - 1); // SCALE TO ENSURE UNBIASED LIGHTING
         }
-
-
-
 
         // SAMPLE DIRECT LIGHT SOURCE
         vec3 directLight = vec3(0.0f, 0.0f, 0.0f);
@@ -1120,7 +1111,7 @@ vec3 EvaluatePath(int segments, uint bounces, uint pixelIndex, uint seed)
     {
         if (cameraPathVertices[pathIndex + i].hitSky == 1)
         {
-            light += vec3(0.5f, 0.7f, 0.95f);
+            light += vec3(0.5f, 0.7f, 0.95f) * 3.5f;
             continue;
         }
 

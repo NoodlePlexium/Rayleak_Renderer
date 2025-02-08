@@ -14,124 +14,32 @@
 #include <random>
 
 // PROJECT HEADERS
-#include "raydia_quad_renderer.h"
-#include "raydia_shader.h"
-#include "raydia_mesh.h"
-#include "raydia_light.h"
-#include "raydia_debug.h"
-#include "raydia_ui.h"
-#include "raydia_model_manager.h"
+#include "luminite_render_system.h"
+#include "luminite_shader.h"
+#include "luminite_mesh.h"
+#include "luminite_light.h"
+#include "luminite_debug.h"
+#include "luminite_ui.h"
+#include "luminite_model_manager.h"
 #include "luminite_camera.h"
-
-struct PathVertex
-{
-    alignas(16) glm::vec3 surfacePosition;
-    alignas(16) glm::vec3 surfaceNormal;
-    alignas(16) glm::vec3 surfaceColour;
-    alignas(16) glm::vec3 reflectedDir;
-    alignas(16) glm::vec3 outgoingLight;
-    alignas(16) glm::vec3 directLight;
-    float surfaceRoughness;
-    float surfaceEmission;
-    float IOR;
-    int refractive;
-    int hitSky;
-    int inside;
-    int refracted;
-    int cachedDirectLight;
-};
-
-bool PathtraceFrame(unsigned int pathtraceShader, 
-                 unsigned int RenderTexture, 
-                 unsigned int DisplayTexture,
-                 float VIEWPORT_WIDTH,
-                 float VIEWPORT_HEIGHT,
-                 uint32_t &renderTileX, 
-                 uint32_t &renderTileY,
-                 uint32_t &accumulationFrame,
-                 uint32_t &frameCount,
-                 uint32_t cameraBounces,
-                 uint32_t lightBounces,
-                 Camera &camera)
-{
-    glUseProgram(pathtraceShader);
-    camera.UpdatePathtracerUniforms(); // CAMERA UNIFORM
-    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_frameCount"), frameCount); // FRAME COUNT FOR PSEUDO RANDOMNESS
-    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_accumulationFrame"), accumulationFrame); // FRAME ACCUMULATION COUNT
-    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_pixelCount"), (uint32_t)VIEWPORT_WIDTH * (uint32_t)VIEWPORT_HEIGHT); // PIXEL COUNT
-    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_debugMode"), 0); // DEBUG MODE
-    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_bounces"), cameraBounces); // CAMERA BOUNCES
-    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_light_bounces"), lightBounces); // LIGHT BOUCNES
-    glBindImageTexture(0, RenderTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F); // RENDER TEXTURE
-    glBindImageTexture(1, DisplayTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8); // DISPLAY TEXTURE
-
-    uint32_t tilesX = (VIEWPORT_WIDTH + 32) / 32;
-    uint32_t tilesY = (VIEWPORT_HEIGHT + 32) / 32;
-
-    // NUMBER OF BATCH TILES
-    uint32_t batchTilesX = 4;
-    uint32_t batchTilesY = 4;
-
-    auto startTime = std::chrono::high_resolution_clock::now();
-    while (renderTileY < tilesY)
-    {
-        // UPDATE TILE OFFSET UNIFORM
-        glUniform1ui(glGetUniformLocation(pathtraceShader, "u_tileX"), renderTileX);
-        glUniform1ui(glGetUniformLocation(pathtraceShader, "u_tileY"), renderTileY);
-
-        auto batchStartTime = std::chrono::high_resolution_clock::now();
-        glDispatchCompute(batchTilesX, batchTilesX, 1);
-        glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
-        glFinish();
-        auto batchEndTime = std::chrono::high_resolution_clock::now();
-        auto batchDuration = std::chrono::duration_cast<std::chrono::milliseconds>(batchEndTime - batchStartTime).count();
-
-        // MOVE ONTO NEXT TILE ROW
-        renderTileX+=batchTilesX;
-        if (renderTileX >= tilesX) 
-        {
-            renderTileX = 0;
-            renderTileY+=batchTilesY;
-        }
-
-        // Check elapsed time
-        auto now = std::chrono::high_resolution_clock::now();
-        float totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
-
-        if (totalDuration + batchDuration >= 16.0f) break; // STOP RENDERING AFTER 16 MILLISECONDS
-    }
-
-    if (renderTileY >= tilesY)
-    {
-        renderTileX = 0;
-        renderTileY = 0;
-        accumulationFrame += 1;
-        frameCount += 1;
-        return true;
-    }
-    return false;
-}
 
 int main()
 {
     float WIDTH = 1280;
     float HEIGHT = 720;
-    float VIEWPORT_WIDTH = WIDTH * 0.8f;
-    float VIEWPORT_HEIGHT = HEIGHT * 0.8f;
-    uint32_t renderTileX = 0;
-    uint32_t renderTileY = 0;
-    uint32_t frameCount = 0;
-    uint32_t accumulationFrame = 0;
+    int VIEWPORT_WIDTH = static_cast<int>(WIDTH * 0.8f);
+    int VIEWPORT_HEIGHT = static_cast<int>(HEIGHT * 0.8f);
     float frameTime = 0.0f;
-    uint32_t cameraBounces = 2;
-    uint32_t lightBounces = 2;
+
+    double lastMouseX = 0.0f;
+    double lastMouseY = 0.0f;
 
     // SETUP A GLFW WINDOW
     if (!glfwInit()) exit(EXIT_FAILURE);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "RedFlare Renderer", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(WIDTH, HEIGHT, "Luminite Renderer", NULL, NULL);
     if (!window)
     {
         glfwTerminate();
@@ -156,96 +64,128 @@ int main()
 
     // OPENGL VIEWPORT
     glViewport(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-
-    // QUAD REDERING SHADER
-    QuadRenderer qRenderer;
-    qRenderer.PrepareQuadShader();
-    qRenderer.CreateFrameBuffer((int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT);
     
     // PATH TRACING COMPUTE SHADER
     std::string pathtraceShaderSource = LoadShaderFromFile("./shaders/bidirectional.shader");
     unsigned int pathtraceShader = CreateComputeShader(pathtraceShaderSource);
 
 
-    // RENDER TEXTURE SETUP
-    unsigned int RenderTexture;
-    glGenTextures(1, &RenderTexture);
-    glBindTexture(GL_TEXTURE_2D, RenderTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, int(VIEWPORT_WIDTH), int(VIEWPORT_HEIGHT), 0, GL_RGBA, GL_FLOAT, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-    // DISPLAY TEXTURE SETUP
-    unsigned int DisplayTexture;
-    glGenTextures(1, &DisplayTexture);
-    glBindTexture(GL_TEXTURE_2D, DisplayTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, int(VIEWPORT_WIDTH), int(VIEWPORT_HEIGHT), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glBindTexture(GL_TEXTURE_2D, 0);
     
     // CREATE CAMERA
     Camera camera(pathtraceShader);
 
 
+    RenderSystem renderSystem(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+
 
     // }----------{ LOAD 3D MESHES }----------{
     std::vector<Mesh*> meshes;
-    LoadOBJ("./models/vw.obj", meshes);
+    std::vector<Material> materials;
 
-    // meshes[4]->material.colour = glm::vec3(0.215f, 0.349f, 0.19f);
-    // meshes[4]->material.roughness = 0.2f;
+    Material stoneMat;
+    stoneMat.LoadAlbedo("textures/stone_colour.jpg");
+    stoneMat.LoadNormal("textures/stone_normal.jpg");
+    stoneMat.LoadRoughness("textures/stone_roughness.jpg");
 
-    // meshes[3]->material.refractive = 1;
-    // meshes[3]->material.roughness = 0.0001f;
-    // meshes[3]->material.IOR = 1.1f;
+    Material roofMat;
+    roofMat.LoadAlbedo("textures/roof_colour.jpg");
+    roofMat.LoadNormal("textures/roof_normal.jpg");
+    roofMat.LoadRoughness("textures/roof_roughness.jpg");
 
-    // meshes[2]->material.colour = glm::vec3(0.1f, 0.1f, 0.1f);
-    // meshes[2]->material.roughness = 0.9f;
+    Material curtainMat;
+    curtainMat.LoadAlbedo("textures/fabric_colour.jpg");
+    curtainMat.LoadNormal("textures/fabric_normal.jpg");
+    curtainMat.LoadRoughness("textures/fabric_roughness.jpg");
+    curtainMat.colour = glm::vec3(0.91f, 0.357f, 0.337f);
 
-    // // meshes[4]->material.emission = 2.0f;
+    Material bannerMat;
+    bannerMat.LoadAlbedo("textures/fabric_colour.jpg");
+    bannerMat.LoadNormal("textures/fabric_normal.jpg");
+    bannerMat.LoadRoughness("textures/fabric_roughness.jpg");
+    bannerMat.colour = glm::vec3(0.224f, 0.302f, 0.502f);
 
-    // meshes[0]->LoadAlbedo("textures/brick_colour.jpeg");
-    // meshes[0]->LoadNormal("textures/brick_normal.jpg");
-    // meshes[0]->LoadRoughness("textures/brick_roughness.jpg");
+    materials.push_back(stoneMat);
+    materials.push_back(roofMat);
+    materials.push_back(curtainMat);
+    materials.push_back(bannerMat);
 
+    LoadOBJ("./models/sponza_simple.obj", meshes);
 
-    // meshes[1]->material.emission = 2.0f;
-    // meshes[1]->material.roughness = 0.001f;
-    // meshes[1]->material.colour = glm::vec3(0.1f, 1.0f, 0.1f);
+    // APPLY STONE TO EVERYTHING
+    for (int i=0; i<meshes.size(); i++)
+    {
+        meshes[i]->materialIndex = 0;
+    }
+
+    // APPLY ROOF MATERIAL
+    uint32_t roofMeshIndex = FindMeshByName("roof", meshes);
+    meshes[roofMeshIndex]->materialIndex = 1;
+
+    // APPLY CURTAIN MATERIAL
+    uint32_t curtainMeshIndex = FindMeshByName("curtains", meshes);
+    meshes[curtainMeshIndex]->materialIndex = 2;
+
+    // APPLY BANNER MATERIAL
+    uint32_t bannerMeshIndex = FindMeshByName("banners", meshes);
+    meshes[bannerMeshIndex]->materialIndex = 3;
+
     // }----------{ LOAD 3D MESHES }----------{
 
 
     // }----------{ SEND MESH DATA TO THE GPU }----------{
     ModelManager modelManager;
-    modelManager.CopyMeshDataToGPU(meshes, pathtraceShader);
+    modelManager.CopyMeshDataToGPU(meshes, materials, pathtraceShader);
     // }----------{ SEND MESH DATA TO THE GPU }----------{
 
 
     // }----------{ SEND LIGHT DATA TO THE GPU }----------{
     DirectionalLight sun;
-    sun.brightness = 2.0f;
+    sun.brightness = 2.5f;
     std::vector<DirectionalLight> directionalLights;
-    // directionalLights.push_back(sun);
+    directionalLights.push_back(sun);
+
 
 
     PointLight pLight;
     pLight.colour = glm::vec3(1.0f, 1.0f, 1.0f);
-    pLight.position = glm::vec3(0.0f, 2.8f, 0.0f);
-    pLight.brightness = 2.0f;
+    pLight.position = glm::vec3(-3.5f, 6.0f, 0.0f);
+    pLight.brightness = 3.0f;
 
     PointLight pLight1;
     pLight1.colour = glm::vec3(1.0f, 1.0f, 1.0f);
-    pLight1.position = glm::vec3(0.0f, 3.5f, 0.2f);
-    pLight1.brightness = 1.0f;
+    pLight1.position = glm::vec3(-3.5f, 6.0f, 5.0f);
+    pLight1.brightness = 3.0f;
+
+    PointLight pLight2;
+    pLight2.colour = glm::vec3(1.0f, 1.0f, 1.0f);
+    pLight2.position = glm::vec3(-3.5f, 6.0f, -5.0f);
+    pLight2.brightness = 3.0f;
+
+
+
+    PointLight pLight3;
+    pLight3.colour = glm::vec3(1.0f, 1.0f, 1.0f);
+    pLight3.position = glm::vec3(3.5f, 6.0f, 0.0f);
+    pLight3.brightness = 3.0f;
+
+    PointLight pLight4;
+    pLight4.colour = glm::vec3(1.0f, 1.0f, 1.0f);
+    pLight4.position = glm::vec3(3.5f, 6.0f, 5.0f);
+    pLight4.brightness = 3.0f;
+
+    PointLight pLight5;
+    pLight5.colour = glm::vec3(1.0f, 1.0f, 1.0f);
+    pLight5.position = glm::vec3(3.5f, 6.0f, -5.0f);
+    pLight5.brightness = 3.0f;
+
     std::vector<PointLight> pointLights;
-    // pointLights.push_back(pLight);
-    // pointLights.push_back(pLight1);
+    pointLights.push_back(pLight);
+    pointLights.push_back(pLight1);
+    pointLights.push_back(pLight2);
+
+    pointLights.push_back(pLight3);
+    pointLights.push_back(pLight4);
+    pointLights.push_back(pLight5);
 
     std::vector<Spotlight> spotlights;
     Spotlight spotlight;
@@ -293,23 +233,6 @@ int main()
     // }----------{ SEND LIGHT DATA TO THE GPU }----------{
 
 
-
-    // CAMERA PATH BUFFER
-    unsigned int cameraPathVertexBuffer;
-    uint32_t cameraPathVertexCount = (int)VIEWPORT_WIDTH * (int)VIEWPORT_HEIGHT * (cameraBounces+1);
-    glGenBuffers(1, &cameraPathVertexBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, cameraPathVertexBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * cameraPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, cameraPathVertexBuffer);
-
-    // LIGHT PATH BUFFER
-    unsigned int lightPathVertexBuffer;
-    uint32_t lightPathVertexCount = (int)VIEWPORT_WIDTH * (int)VIEWPORT_HEIGHT * (lightBounces+2);
-    glGenBuffers(1, &lightPathVertexBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, lightPathVertexBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * lightPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, lightPathVertexBuffer);
-
     // }----------{ APPLICATION LOOP }----------{
     while (!glfwWindowShouldClose(window))
     {
@@ -327,41 +250,12 @@ int main()
         {
             HEIGHT = newHEIGHT;
             WIDTH = newWIDTH;
-            VIEWPORT_WIDTH = WIDTH * 0.8f;
-            VIEWPORT_HEIGHT = HEIGHT * 0.8f;
+            VIEWPORT_WIDTH = static_cast<int>(WIDTH * 0.8f);
+            VIEWPORT_HEIGHT = static_cast<int>(HEIGHT * 0.8f);
 
             // RESIZE FRAME BUFFER, OPENGL VIEWPORT
-            qRenderer.ResizeFramebuffer((int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT);
-            glViewport(0, 0, (int)VIEWPORT_WIDTH, (int)VIEWPORT_HEIGHT); 
-
-            // RESIZE RENDER TEXTURE
-            glBindTexture(GL_TEXTURE_2D, RenderTexture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, int(VIEWPORT_WIDTH), int(VIEWPORT_HEIGHT), 0, GL_RGBA, GL_FLOAT, nullptr);
-            glBindTexture(GL_TEXTURE_2D, 0);
-
-            // RESIZE DISPLAY TEXTURE
-            glBindTexture(GL_TEXTURE_2D, DisplayTexture);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, int(VIEWPORT_WIDTH), int(VIEWPORT_HEIGHT), 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-            glBindTexture(GL_TEXTURE_2D, 0);
-
-            // RESIZE CAMERA PATH VERTEX BUFFER
-            cameraPathVertexCount = (int)VIEWPORT_WIDTH * (int)VIEWPORT_HEIGHT * (cameraBounces+1);
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, cameraPathVertexBuffer);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * cameraPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, cameraPathVertexBuffer);
-
-            // RESIZE LIGHT PATH VERTEX BUFFER
-            lightPathVertexCount = (int)VIEWPORT_WIDTH * (int)VIEWPORT_HEIGHT * (lightBounces+2);
-            glBindBuffer(GL_SHADER_STORAGE_BUFFER, lightPathVertexBuffer);
-            glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * lightPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-            glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, lightPathVertexBuffer);
-
-            // RESET FRAME ACCUMULATION
-            accumulationFrame = 0;
-
-            // RESET RENDER TILE COORDINATES
-            renderTileX = 0;
-            renderTileY = 0;
+            renderSystem.ResizeFramebuffer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+            glViewport(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT); 
         }
         // }----------{ HANDLE WINDOW RESIZING }----------{
 
@@ -369,28 +263,73 @@ int main()
         UpdateUI();
         glClearColor(0.047f, 0.082f, 0.122f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        
+
+
+        renderSystem.SetRendererStatic();
+
+        // }----------{ VIEWPORT CONTROLS }----------{
+        double mouseX, mouseY;
+        glfwGetCursorPos(window, &mouseX, &mouseY);
+        float dx = float(mouseX) - float(lastMouseX);
+        float dy = float(mouseY) - float(lastMouseY);
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
+
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+            camera.rotation.y += dx * 0.55f;
+            camera.rotation.x += dy * 0.55f;
+            camera.rotation.x = std::max(-89.0f, std::min(89.0f, camera.rotation.x));   
+            renderSystem.SetRendererDynamic();
+        }
+
+        glm::vec3 moveDir = glm::vec3(0.0f, 0.0f, 0.0f);
+        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        {
+            moveDir += camera.forward * 1.0f;
+        }
+        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        {
+            moveDir += camera.right * -1.0f;
+        }
+        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+        {
+            moveDir += camera.forward * -1.0f;
+        }
+        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+        {
+            moveDir += camera.right * 1.0f;
+        }
+         if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+        {
+            moveDir += glm::vec3(0.0f, 1.0f, 0.0f);
+        }
+        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+        {
+            moveDir += glm::vec3(0.0f, -1.0f, 0.0f);
+        }  
+        if (glm::length(moveDir) != 0.0f)
+        {
+            camera.pos += glm::normalize(moveDir) * frameTime * 3.0f;
+            renderSystem.SetRendererDynamic();
+        }
+        // }----------{ VIEWPORT CONTROLS }----------{
+
+
+
+
 
         // }----------{ INVOKE PATH TRACER }----------{
-        bool completedFrame = PathtraceFrame(pathtraceShader, 
-                                             RenderTexture, 
-                                             DisplayTexture, 
-                                             VIEWPORT_WIDTH, 
-                                             VIEWPORT_HEIGHT,
-                                             renderTileX,
-                                             renderTileY, 
-                                             accumulationFrame, 
-                                             frameCount, 
-                                             cameraBounces, 
-                                             lightBounces, 
-                                             camera);
+        renderSystem.PathtraceFrame(
+            pathtraceShader,  
+            camera
+        );
         // }----------{ PATH TRACER ENDS }----------{
 
 
     
 
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
-        qRenderer.RenderToViewport(DisplayTexture);
+        renderSystem.RenderToViewport();
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
 
 
@@ -413,7 +352,7 @@ int main()
         ImGui::BeginChild("Viewport", ImVec2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT), true);
         ImVec2 cursorPos = ImGui::GetCursorScreenPos();
         ImGui::GetWindowDrawList()->AddImage(
-            (ImTextureID)(intptr_t)qRenderer.GetFrameBufferTextureID(),
+            (ImTextureID)(intptr_t)renderSystem.GetFrameBufferTextureID(),
             cursorPos,
             ImVec2(cursorPos.x + VIEWPORT_WIDTH, cursorPos.y + VIEWPORT_HEIGHT),
             ImVec2(0, 1),
@@ -462,11 +401,9 @@ int main()
         frameTime = duration.count();
     }
 
-    glDeleteBuffers(1, &RenderTexture);
     glDeleteBuffers(1, &directionalLightBuffer);
     glDeleteBuffers(1, &pointLightBuffer);
     glDeleteBuffers(1, &spotlightBuffer);
-    glDeleteBuffers(1, &cameraPathVertexBuffer);
 
     glfwDestroyWindow(window);
     glfwTerminate();

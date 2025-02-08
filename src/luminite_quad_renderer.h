@@ -1,7 +1,7 @@
 #pragma once
 #include <GL/glew.h>
 #include <string>
-#include "raydia_shader.h"
+#include "luminite_shader.h"
 
 class QuadRenderer
 {
@@ -37,8 +37,8 @@ public:
         glBindFramebuffer(GL_FRAMEBUFFER, FBO);
         glBindTexture(GL_TEXTURE_2D, FrameBufferTextureID);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, FrameBufferTextureID, 0);
         glBindTexture(GL_TEXTURE_2D, 0);
         
@@ -56,8 +56,8 @@ public:
         glGenTextures(1, &FrameBufferTextureID);
         glBindTexture(GL_TEXTURE_2D, FrameBufferTextureID);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width,  height, 0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, FrameBufferTextureID, 0);
         glGenRenderbuffers(1, &RBO);
         glBindRenderbuffer(GL_RENDERBUFFER, RBO);
