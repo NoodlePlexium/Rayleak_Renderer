@@ -9,11 +9,11 @@ public:
     Camera(unsigned int _pathtraceShader) : pathtraceShader(_pathtraceShader)
     {
         pos      = glm::vec3(0.0f, 0.5f, -4.7f);
-        rotation = glm::vec3(0.0f, 0.0f, 0.0f);
+        rotation = glm::vec3(0.0f, -90.0f, 0.0f);
         forward  = glm::vec3(0.0f, 0.0f, -1.0f);
         right    = glm::vec3(1.0f, 0.0f, 0.0f);
         up       = glm::vec3(0.0f, 1.0f, 0.0f);
-        FOV = 85.0f;
+        FOV = 90.0f;
     }
 
     void UpdatePathtracerUniforms()

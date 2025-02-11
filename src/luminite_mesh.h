@@ -17,9 +17,10 @@
 #include <cmath>
 #include <chrono>
 #include <omp.h>
-// PROJECT HEADERS
 
+// PROJECT HEADERS
 #include "luminite_debug.h"
+
 
 struct MeshPartition
 {
@@ -174,6 +175,7 @@ struct Vertex
     }
 };
 
+
 // adapted from: https://stackoverflow.com/a/57595105
 template <typename T, typename... Rest> 
 void HashCombine(std::size_t& seed, const T& v, const Rest&... rest) 
@@ -192,6 +194,7 @@ struct VertexHasher
     }
 };
 
+
 struct Mesh
 {
     std::vector<Vertex> vertices;
@@ -205,10 +208,13 @@ struct Mesh
     uint32_t nodesUsed = 1;
     uint32_t materialIndex = 0;
 
+    glm::vec3 aabbMin;
+    glm::vec3 aabbMax;
+
     void Init()
     {
         position = glm::vec3(0.0f, 0.0f, 0.0f);
-        rotation = glm::vec3(0.0f, 2.0f, 0.0f);
+        rotation = glm::vec3(0.0f, 0.0f, 0.0f);
         scale = glm::vec3(1.0f, 1.0f, 1.0f);
     }
 
@@ -396,7 +402,7 @@ void LoadOBJ(const std::string& filepath, std::vector<Mesh*>& meshes)
     {
         if (shape.mesh.indices.size() == 0) continue;
 
-        Mesh* mesh = new Mesh();  // Allocate mesh on the heap
+        Mesh* mesh = new Mesh();  
         mesh->Init();
         mesh->name = shape.name;
         mesh->vertices.reserve(shape.mesh.indices.size()); 
@@ -413,6 +419,9 @@ void LoadOBJ(const std::string& filepath, std::vector<Mesh*>& meshes)
                     attrib.vertices[3 * index.vertex_index],
                     attrib.vertices[3 * index.vertex_index + 1],
                     attrib.vertices[3 * index.vertex_index + 2]);
+
+                mesh->aabbMin = glm::min(mesh->aabbMin, vertex.pos);
+                mesh->aabbMax = glm::max(mesh->aabbMax, vertex.pos);
             }
 
             if (index.normal_index >= 0)

@@ -981,7 +981,7 @@ vec3 EvaluateBidirectional(int cameraVertices, int lightVertices, uint pixelInde
     // HIT SKY - SKIP ALL COMPUTATION AND RETURN SKY COLOUR
     if (cameraPathVertices[camPathIndex].hitSky == 1)
     {
-        return vec3(0.5f, 0.7f, 0.95f) * 2.0f;
+        return vec3(0.5f, 0.7f, 0.95f) * 3.5f;
     } 
 
     // EVALUATE LIGHT PATH ILLUMINATION AT EACH VERTEX
@@ -1014,7 +1014,7 @@ vec3 EvaluateBidirectional(int cameraVertices, int lightVertices, uint pixelInde
     {
         if (cameraPathVertices[camPathIndex + i].hitSky == 1)
         {
-            light += vec3(0.5f, 0.7f, 0.95f) * 2.0f;
+            light += vec3(0.5f, 0.7f, 0.95f) * 3.5f;
             continue;
         }
 
@@ -1111,7 +1111,7 @@ vec3 EvaluatePath(int segments, uint bounces, uint pixelIndex, uint seed)
     {
         if (cameraPathVertices[pathIndex + i].hitSky == 1)
         {
-            light += vec3(0.5f, 0.7f, 0.95f) * 3.5f;
+            light += vec3(0.5f, 0.7f, 0.95f) * 0.0f;
             continue;
         }
 

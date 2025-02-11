@@ -242,13 +242,13 @@ public:
         return qRenderer.GetFrameBufferTextureID();
     }
 
+    uint32_t accumulationFrame = 0;
 private:
 
-    float renderBudget = 16;
+    float renderBudget = 15;
     float resolutionScale = 1.0f;
-    uint32_t cameraBounces = 5;
+    uint32_t cameraBounces = 3;
     uint32_t lightBounces = 2;
-    uint32_t accumulationFrame = 0;
     uint32_t frameCount = 0;
 
     QuadRenderer qRenderer;
@@ -276,14 +276,14 @@ private:
         }
         else if (accumulationFrame == 0) // DEFAULT TILE WIDTH
         {
-            tileWidth = 4;
+            tileWidth = 3;
         }
         else 
         { 
             float timePerBlock = lastFrameRenderTime / (x_blocks * y_blocks);
             float numBlocks = renderBudget / std::max(timePerBlock, 0.001f);
             tileWidth = static_cast<uint32_t>(std::sqrt(numBlocks)); 
-            if (tileWidth < 4) tileWidth = 4;
+            if (tileWidth < 3) tileWidth = 3;
         }
         lastFrameRenderTime = 0;
 

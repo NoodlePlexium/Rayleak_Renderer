@@ -142,7 +142,7 @@ int main()
     DirectionalLight sun;
     sun.brightness = 2.5f;
     std::vector<DirectionalLight> directionalLights;
-    directionalLights.push_back(sun);
+    // directionalLights.push_back(sun);
 
 
 
