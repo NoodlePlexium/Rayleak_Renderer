@@ -106,47 +106,47 @@ public:
         glGenBuffers(1, &vertexBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, vertexBuffer);
         glBufferStorage(GL_SHADER_STORAGE_BUFFER, vertexBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, vertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, vertexBuffer);
         void* mappedVertexBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, vertexBufferSize, GL_MAP_WRITE_BIT);
 
         // INDEX BUFFER
         glGenBuffers(1, &indexBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, indexBuffer);
         glBufferStorage(GL_SHADER_STORAGE_BUFFER, indexBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, indexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, indexBuffer);
         void* mappedIndexBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, indexBufferSize, GL_MAP_WRITE_BIT);
 
         // MATERIAL BUFFER
         glGenBuffers(1, &materialBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, materialBuffer);
         glBufferStorage(GL_SHADER_STORAGE_BUFFER, materialBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, materialBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, materialBuffer);
         void* mappedMaterialBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, materialBufferSize, GL_MAP_WRITE_BIT);
 
         // MESH BVH BUFFER
         glGenBuffers(1, &bvhBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, bvhBuffer);
         glBufferStorage(GL_SHADER_STORAGE_BUFFER, bvhBufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, bvhBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, bvhBuffer);
         void* mappedBVHBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, bvhBufferSize, GL_MAP_WRITE_BIT);
        
         // SCENE BVH BUFFER
         glGenBuffers(1, &sceneBvhBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, sceneBvhBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, nodesUsed * sizeof(BVH_Node), sceneBvhNodes, GL_STATIC_READ);  
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, sceneBvhBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, sceneBvhBuffer);
         
         // PARTITION BUFFER
         glGenBuffers(1, &partitionBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, partitionBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(MeshPartition) * meshPartitions.size(), meshPartitions.data(), GL_STATIC_READ);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, partitionBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, partitionBuffer);
 
         // EMISSION INDEX BUFFER
         glGenBuffers(1, &emissiveBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, emissiveBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(EmissiveTriangle) * emissiveTriangleCount, emissiveTriangleBuffer.data(), GL_STATIC_READ);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, emissiveBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, emissiveBuffer);
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_emissiveTriangleCount"), emissiveTriangleCount);
 
         // COPY VERTEX INDEX AND MATERIAL DATA TO THE GPU
@@ -198,21 +198,21 @@ public:
         glGenBuffers(1, &directionalLightBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, directionalLightBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(DirectionalLight) * directionalLights.size(), directionalLights.data(), GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, directionalLightBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, directionalLightBuffer);
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_directionalLightCount"), directionalLights.size());
 
         // POINT LIGHTS
         glGenBuffers(1, &pointLightBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, pointLightBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PointLight) * pointLights.size(), pointLights.data(), GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, pointLightBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, pointLightBuffer);
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_pointLightCount"), pointLights.size());
 
         // SPOTLIGHTS
         glGenBuffers(1, &spotlightBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, spotlightBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(Spotlight) * spotlights.size(), spotlights.data(), GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, spotlightBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, spotlightBuffer);
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_spotlightCount"), spotlights.size());
     }
 

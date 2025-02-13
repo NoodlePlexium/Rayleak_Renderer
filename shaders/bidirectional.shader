@@ -134,51 +134,51 @@ struct PathVertex
     int cachedDirectLight;
 };
 
-layout(binding = 1) readonly buffer VertexBuffer {
+layout(binding = 2) readonly buffer VertexBuffer {
     Vertex vertices[];
 };
 
-layout(binding = 2) readonly buffer IndexBuffer {
+layout(binding = 3) readonly buffer IndexBuffer {
     uint indices[];
 };
 
-layout(binding = 3) readonly buffer MaterialBuffer {
+layout(binding = 4) readonly buffer MaterialBuffer {
     Material materials[];
 };
 
-layout(binding = 4) readonly buffer BVHBuffer {
+layout(binding = 5) readonly buffer BVHBuffer {
     BVH_Node bvhNodes[];
 };
 
-layout(binding = 5) readonly buffer SceneBVHBuffer {
+layout(binding = 6) readonly buffer SceneBVHBuffer {
     BVH_Node sceneBvhNodes[];
 };
 
-layout(binding = 6) readonly buffer PartitionBuffer {
+layout(binding = 7) readonly buffer PartitionBuffer {
     MeshPartition meshPartitions[];
 };
 
-layout(binding = 7) readonly buffer EmissiveBuffer {
+layout(binding = 8) readonly buffer EmissiveBuffer {
     EmissiveTriangle emissiveTriangles[];
 };
 
-layout(binding = 8) readonly buffer DirectionalLightBuffer {
+layout(binding = 9) readonly buffer DirectionalLightBuffer {
     DirectionalLight directionalLights[];
 };
 
-layout(binding = 9) readonly buffer PointLightBuffer {
+layout(binding = 10) readonly buffer PointLightBuffer {
     PointLight pointLights[];
 };
 
-layout(binding = 10) readonly buffer SpotlightLightBuffer {
+layout(binding = 11) readonly buffer SpotlightLightBuffer {
     Spotlight spotlights[];
 };
 
-layout(binding = 11) buffer CameraPathVertexBuffer {
+layout(binding = 12) buffer CameraPathVertexBuffer {
     PathVertex cameraPathVertices[];
 };
 
-layout(binding = 12) buffer LightPathVertexBuffer {
+layout(binding = 13) buffer LightPathVertexBuffer {
     PathVertex lightPathVertices[];
 };
 
@@ -196,7 +196,6 @@ uniform uint u_pointLightCount;
 uniform uint u_spotlightCount;
 uniform uint u_emissiveTriangleCount;
 uniform float u_resolution_scale;
-
 
 
 

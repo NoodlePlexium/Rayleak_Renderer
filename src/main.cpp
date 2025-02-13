@@ -113,7 +113,7 @@ int main()
     materials.push_back(curtainMat);
     materials.push_back(bannerMat);
 
-    LoadOBJ("./models/vw.obj", meshes);
+    LoadOBJ("./models/sponza_simple.obj", meshes);
 
     // APPLY STONE TO EVERYTHING
     for (int i=0; i<meshes.size(); i++)
@@ -122,16 +122,16 @@ int main()
     }
 
     // APPLY ROOF MATERIAL
-    // uint32_t roofMeshIndex = FindMeshByName("roof", meshes);
-    // meshes[roofMeshIndex]->materialIndex = 1;
+    uint32_t roofMeshIndex = FindMeshByName("roof", meshes);
+    meshes[roofMeshIndex]->materialIndex = 1;
 
-    // // APPLY CURTAIN MATERIAL
-    // uint32_t curtainMeshIndex = FindMeshByName("curtains", meshes);
-    // meshes[curtainMeshIndex]->materialIndex = 2;
+    // APPLY CURTAIN MATERIAL
+    uint32_t curtainMeshIndex = FindMeshByName("curtains", meshes);
+    meshes[curtainMeshIndex]->materialIndex = 2;
 
-    // // APPLY BANNER MATERIAL
-    // uint32_t bannerMeshIndex = FindMeshByName("banners", meshes);
-    // meshes[bannerMeshIndex]->materialIndex = 3;
+    // APPLY BANNER MATERIAL
+    uint32_t bannerMeshIndex = FindMeshByName("banners", meshes);
+    meshes[bannerMeshIndex]->materialIndex = 3;
 
     // }----------{ LOAD 3D MESHES }----------{
 
@@ -347,7 +347,7 @@ int main()
         );
         int frameRate = int((1.0f / frameTime) + 0.5f);
         std::string frameTimeString = std::to_string(frameTime * 1000) + "ms";
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 128, 255));
         ImGui::Text("%s", frameTimeString.c_str());
         ImGui::PopStyleColor();
 

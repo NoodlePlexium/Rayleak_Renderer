@@ -32,10 +32,18 @@ struct PathVertex
 
 struct RenderTile
 {
-    uint32_t x;
-    uint32_t y;
-    uint32_t width;
-    uint32_t height;
+    int x;
+    int y;
+    int width;
+    int height;
+
+    RenderTile ()
+    {
+        x = 0;
+        y = 0;
+        width = 0;
+        height = 0;
+    }
 };
 
 class RenderSystem
@@ -78,14 +86,19 @@ public:
         glGenBuffers(1, &cameraPathVertexBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cameraPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * cameraPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, cameraPathVertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, cameraPathVertexBuffer);
 
         // LIGHT PATH BUFFER
         uint32_t lightPathVertexCount = SCA_W * SCA_H * (lightBounces+2);
         glGenBuffers(1, &lightPathVertexBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, lightPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * lightPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, lightPathVertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, lightPathVertexBuffer);
+
+        // RESERVE SPACE FOR GROUP TIMES
+        uint32_t tilesX = static_cast<uint32_t>((static_cast<float>(SCA_W) + 32) / 32);
+        uint32_t tilesY =  static_cast<uint32_t>((static_cast<float>(SCA_H) + 32) / 32);
+        groupTimes.reserve(tilesX * tilesY);
     }
 
     ~RenderSystem()
@@ -132,6 +145,12 @@ public:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, lightPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * lightPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, lightPathVertexBuffer);
+
+        // RESERVE SPACE FOR GROUP TIMES
+        uint32_t tilesX = static_cast<uint32_t>((static_cast<float>(SCA_W) + 32) / 32);
+        uint32_t tilesY =  static_cast<uint32_t>((static_cast<float>(SCA_H) + 32) / 32);
+        groupTimes.clear();
+        groupTimes.reserve(tilesX * tilesY);
 
         // EMPTY TILE QUEUE
         while (!TileQueue.empty()) TileQueue.pop();
@@ -208,7 +227,6 @@ public:
 
         while (!TileQueue.empty())
         {
-            auto batchStartTime = std::chrono::high_resolution_clock::now();
             const RenderTile &tile = TileQueue.front();
 
             // UPDATE TILE OFFSET UNIFORM
@@ -216,21 +234,31 @@ public:
             glUniform1ui(glGetUniformLocation(pathtraceShader, "u_tileY"), tile.y);
 
             // RENDER TILE SEGMENT OF IMAGE
+            auto dispatchStartTime = std::chrono::high_resolution_clock::now();
             glDispatchCompute(tile.width, tile.height, 1);
             glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
             glFinish();
+            auto dispatchEndTime = std::chrono::high_resolution_clock::now();
+            float dispatchDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(dispatchEndTime - dispatchStartTime).count() / 1000000.0f;
+
+            // SET GROUP TIMES
+            if (!dynamicScene)
+            {
+                float timePerGroup = dispatchDuration / (tile.width * tile.height);
+                for (int y=0; y<tile.height; y++) for (int x=0; x<tile.width; x++)
+                {
+                    int groupIndex = (y + tile.y) * tilesX + (x + tile.x);
+                    groupTimes[groupIndex] = timePerGroup;
+                }
+            }
 
             // REMOVE TILE FROM QUEUE
             TileQueue.pop();
 
-            auto batchEndTime = std::chrono::high_resolution_clock::now();
-            float batchDuration = std::chrono::duration_cast<std::chrono::microseconds>(batchEndTime - batchStartTime).count() / 1000.0f;
 
-            // Check elapsed time
             auto now = std::chrono::high_resolution_clock::now();
             float totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
-            lastFrameRenderTime += batchDuration;
-            if (totalDuration + batchDuration >= renderBudget) break; // STOP RENDERING AFTER 16 MILLISECONDS
+            if (totalDuration + dispatchDuration >= renderBudget) break; // STOP RENDERING AFTER 16 MILLISECONDS
         }
 
         if (TileQueue.empty()) {
@@ -265,8 +293,9 @@ private:
     unsigned int RenderTexture;
     unsigned int cameraPathVertexBuffer;
     unsigned int lightPathVertexBuffer;
-    float lastFrameRenderTime;
     std::queue<RenderTile> TileQueue;
+
+    std::vector<float> groupTimes;
 
     // DYNAMIC SCENES
     bool dynamicScene = false;
@@ -274,50 +303,84 @@ private:
     float revert_cameraBoucnes;
 
 
-    void ScheduleRenderTiles(uint32_t x_blocks, uint32_t y_blocks, uint32_t accumulationFrame)
+    void ScheduleRenderTiles(int x_blocks, int y_blocks, uint32_t accumulationFrame)
     {
-        uint32_t tileWidth = 0;
         if (dynamicScene) 
         {
-            tileWidth = std::max(x_blocks, y_blocks);
+            RenderTile tile;
+            tile.width = x_blocks;
+            tile.height = y_blocks;
+            TileQueue.push(tile);
         }
-        else if (accumulationFrame == 0) // DEFAULT TILE WIDTH
+        else if (accumulationFrame == 0) // INITIAL TILE WIDTH
         {
-            tileWidth = 3;
+            int tileWidth = 3;
+
+            // CREATE SCHEDULE QUEUE
+            int x = 0;
+            int y = 0;
+            while (y < y_blocks)
+            {
+                // CREATE NEW RENDER TILE
+                RenderTile tile;
+                tile.width = std::min(tileWidth, x_blocks - x);
+                tile.height = std::min(tileWidth, y_blocks - y);
+                tile.x = x;
+                tile.y = y; 
+
+                // ADD RENDER TILE TO QUEUE
+                TileQueue.push(tile);
+
+                // INCREMENT X
+                x += tile.width;
+
+                // MOVE TO NEXT ROW
+                if (x >= x_blocks)
+                {
+                    x = 0;
+                    y += tile.height;
+                }
+            }
         }
         else 
         { 
-            float timePerBlock = lastFrameRenderTime / (x_blocks * y_blocks);
-            float numBlocks = renderBudget / std::max(timePerBlock, 0.001f);
-            tileWidth = static_cast<uint32_t>(std::sqrt(numBlocks)); 
-            if (tileWidth < 3) tileWidth = 3;
-        }
-        lastFrameRenderTime = 0;
-
-
-        // CREATE SCHEDULE QUEUE
-        uint32_t x = 0;
-        uint32_t y = 0;
-        while (y < y_blocks)
-        {
-            // CREATE NEW RENDER TILE
-            RenderTile tile;
-            tile.width = std::min(tileWidth, x_blocks - x);
-            tile.height = std::min(tileWidth, y_blocks - y);
-            tile.x = x;
-            tile.y = y; 
-
-            // ADD RENDER TILE TO QUEUE
-            TileQueue.push(tile);
-
-            // INCREMENT X
-            x += tile.width;
-
-            // MOVE TO NEXT ROW
-            if (x >= x_blocks)
+            int minTileWidth = 2;
+            int x = 0;
+            int y = 0;
+            while (y < y_blocks)
             {
-                x = 0;
-                y += tile.height;
+                // CREATE NEW RENDER TILE
+                RenderTile tile;
+                tile.x = x;
+                tile.y = y;
+                tile.height = std::min(minTileWidth, y_blocks - tile.y);
+
+                float cumulativeTime = 0;
+                while (x < x_blocks && cumulativeTime < renderBudget)
+                {
+                    // CALCULATE TIME FOR NEXT SQUARE
+                    for (int xf=x; xf<std::min(x+minTileWidth, x_blocks); xf++)
+                    {
+                        for (int yf=y; yf<std::min(y+minTileWidth, y_blocks); yf++)
+                        {
+                            cumulativeTime += groupTimes[yf * x_blocks + xf];
+                        }
+                    }
+                    int widthAddition = std::min(minTileWidth, x_blocks - x);
+                    tile.width += widthAddition;
+                    x += widthAddition;
+                }
+
+                // ADD RENDER TILE TO QUEUE
+                TileQueue.push(tile);
+
+
+                // MOVE TO NEXT ROW
+                if (x >= x_blocks)
+                {
+                    x = 0;
+                    y += tile.height;
+                }
             }
         }
     }
