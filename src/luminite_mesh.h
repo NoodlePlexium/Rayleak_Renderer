@@ -241,15 +241,13 @@ struct Mesh
         node.aabbMax = glm::vec3(-1e30f);
         for (uint32_t i=0; i<node.indexCount; i+=3)
         {
-            Vertex &v1 = vertices[indices[node.firstIndex + i]];
-            Vertex &v2 = vertices[indices[node.firstIndex + i+1]];
-            Vertex &v3 = vertices[indices[node.firstIndex + i+2]];
-            node.aabbMin = glm::min(node.aabbMin, v1.pos);
-            node.aabbMin = glm::min(node.aabbMin, v2.pos);
-            node.aabbMin = glm::min(node.aabbMin, v3.pos);
-            node.aabbMax = glm::max(node.aabbMax, v1.pos);
-            node.aabbMax = glm::max(node.aabbMax, v2.pos);
-            node.aabbMax = glm::max(node.aabbMax, v3.pos);
+            const Vertex &v1 = vertices[indices[node.firstIndex + i]];
+            const Vertex &v2 = vertices[indices[node.firstIndex + i+1]];
+            const Vertex &v3 = vertices[indices[node.firstIndex + i+2]];
+            glm::vec3 vertexMin = glm::min(v1.pos, glm::min(v2.pos, v3.pos));
+            glm::vec3 vertexMax = glm::max(v1.pos, glm::max(v2.pos, v3.pos));
+            node.aabbMin = glm::min(node.aabbMin, vertexMin);
+            node.aabbMax = glm::max(node.aabbMax, vertexMax);
         }
     }
 

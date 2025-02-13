@@ -20,16 +20,20 @@
 #include "luminite_light.h"
 #include "luminite_debug.h"
 #include "luminite_ui.h"
-#include "luminite_model_manager.h"
+#include "luminite_object_manager.h"
 #include "luminite_camera.h"
 
 int main()
 {
     float WIDTH = 1280;
     float HEIGHT = 720;
-    int VIEWPORT_WIDTH = static_cast<int>(WIDTH * 0.8f);
-    int VIEWPORT_HEIGHT = static_cast<int>(HEIGHT * 0.8f);
+    int VIEWPORT_WIDTH = static_cast<int>(WIDTH - 250.0f);
+    int VIEWPORT_HEIGHT = static_cast<int>(HEIGHT - 250.0f);
     float frameTime = 0.0f;
+
+
+    // CAMERA SETTINGS
+
 
     double lastMouseX = 0.0f;
     double lastMouseY = 0.0f;
@@ -109,7 +113,7 @@ int main()
     materials.push_back(curtainMat);
     materials.push_back(bannerMat);
 
-    LoadOBJ("./models/sponza_simple.obj", meshes);
+    LoadOBJ("./models/vw.obj", meshes);
 
     // APPLY STONE TO EVERYTHING
     for (int i=0; i<meshes.size(); i++)
@@ -118,16 +122,16 @@ int main()
     }
 
     // APPLY ROOF MATERIAL
-    uint32_t roofMeshIndex = FindMeshByName("roof", meshes);
-    meshes[roofMeshIndex]->materialIndex = 1;
+    // uint32_t roofMeshIndex = FindMeshByName("roof", meshes);
+    // meshes[roofMeshIndex]->materialIndex = 1;
 
-    // APPLY CURTAIN MATERIAL
-    uint32_t curtainMeshIndex = FindMeshByName("curtains", meshes);
-    meshes[curtainMeshIndex]->materialIndex = 2;
+    // // APPLY CURTAIN MATERIAL
+    // uint32_t curtainMeshIndex = FindMeshByName("curtains", meshes);
+    // meshes[curtainMeshIndex]->materialIndex = 2;
 
-    // APPLY BANNER MATERIAL
-    uint32_t bannerMeshIndex = FindMeshByName("banners", meshes);
-    meshes[bannerMeshIndex]->materialIndex = 3;
+    // // APPLY BANNER MATERIAL
+    // uint32_t bannerMeshIndex = FindMeshByName("banners", meshes);
+    // meshes[bannerMeshIndex]->materialIndex = 3;
 
     // }----------{ LOAD 3D MESHES }----------{
 
@@ -205,33 +209,13 @@ int main()
     spotlight2.falloff = 0.001f;
     // spotlights.push_back(spotlight2);
 
-    glUseProgram(pathtraceShader);
 
-    // DIRECTIONAL LIGHTS
-    unsigned int directionalLightBuffer;
-    glGenBuffers(1, &directionalLightBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, directionalLightBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(DirectionalLight) * directionalLights.size(), directionalLights.data(), GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, directionalLightBuffer);
-    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_directionalLightCount"), directionalLights.size());
-
-    // POINT LIGHTS
-    unsigned int pointLightBuffer;
-    glGenBuffers(1, &pointLightBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, pointLightBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PointLight) * pointLights.size(), pointLights.data(), GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, pointLightBuffer);
-    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_pointLightCount"), pointLights.size());
-
-    // SPOTLIGHTS
-    unsigned int spotlightBuffer;
-    glGenBuffers(1, &spotlightBuffer);
-    glBindBuffer(GL_SHADER_STORAGE_BUFFER, spotlightBuffer);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(Spotlight) * spotlights.size(), spotlights.data(), GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, spotlightBuffer);
-    glUniform1ui(glGetUniformLocation(pathtraceShader, "u_spotlightCount"), spotlights.size());
+    modelManager.CopyLightDataToGPU(directionalLights, pointLights, spotlights, pathtraceShader);
     // }----------{ SEND LIGHT DATA TO THE GPU }----------{
 
+
+    ImFont* fontBody = LoadFont("fonts/Inter/Inter-VariableFont_opsz,wght.ttf", 18);
+    ImFont* fontHeader = LoadFont("fonts/Inter/Inter-VariableFont_opsz,wght.ttf", 24);
 
     // }----------{ APPLICATION LOOP }----------{
     while (!glfwWindowShouldClose(window))
@@ -250,8 +234,8 @@ int main()
         {
             HEIGHT = newHEIGHT;
             WIDTH = newWIDTH;
-            VIEWPORT_WIDTH = static_cast<int>(WIDTH * 0.8f);
-            VIEWPORT_HEIGHT = static_cast<int>(HEIGHT * 0.8f);
+            VIEWPORT_WIDTH = static_cast<int>(WIDTH - 250.0f);
+            VIEWPORT_HEIGHT = static_cast<int>(HEIGHT - 250.0f);
 
             // RESIZE FRAME BUFFER, OPENGL VIEWPORT
             renderSystem.ResizeFramebuffer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
@@ -261,7 +245,7 @@ int main()
 
 
         UpdateUI();
-        glClearColor(0.047f, 0.082f, 0.122f, 1.0f);
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 
@@ -334,7 +318,10 @@ int main()
 
 
         // }----------{ APP LAYOUT }----------{
+        ImGui::PushFont(fontBody);
         ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(5, 5));
         ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
         ImGui::SetNextWindowSize(ImGui::GetMainViewport()->Size, ImGuiCond_Always);
         ImGui::SetNextWindowBgAlpha(0.0f);
@@ -363,32 +350,74 @@ int main()
         ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 0, 255));
         ImGui::Text("%s", frameTimeString.c_str());
         ImGui::PopStyleColor();
+
+
+        
+        // Settings Menu
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 20.0f);
+        ImGui::BeginChild("Settings Panel", ImVec2(240.0f, 0), false);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 3));
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.1f));
+            ImGui::BeginChild("Settings", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
+
+            PaddedText("Camera Settings", 5.0f);
+            FloatAttribute("Field of View", "FOV", "", 5.0f, 5.0f, &camera.fov);
+            CheckboxAttribute("Depth of Field", "DOF", 5.0f, 5.0f, &camera.dof);
+            FloatAttribute("Focus Distance", "FOCUS", "m", 5.0f, 5.0f, &camera.focus_distance);
+            FloatAttribute("fStops", "fStops", "", 5.0f, 5.0f, &camera.fStop);
+            CheckboxAttribute("Anti Aliasing", "AA", 5.0f, 5.0f, &camera.anti_aliasing);
+            FloatAttribute("Exposure", "EXPOSURE", "", 5.0f, 5.0f, &camera.exposure);
+            
+            if (camera.SettingsChanged())
+            {
+                renderSystem.RestartRender();
+            }
+
+            ImGui::EndChild();
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+        // Settings Menu
+
+
+
+        
         ImGui::EndChild();
         ImGui::PopStyleVar();
         // }----------{ VIEWPORT WINDOW   }----------{
         
 
         // }----------{ OBJECTS PANEL     }----------{
-        RenderObjectsPanel(meshes, VIEWPORT_HEIGHT);
+        RenderObjectsPanel(meshes, VIEWPORT_HEIGHT, fontHeader);
         // }----------{ OBJECTS PANEL     }----------{
 
 
         // }----------{ MODEL EXPLORER    }----------{
-        RenderModelExplorer();
+        RenderModelExplorer(fontHeader);
         // }----------{ MODEL EXPLORER    }----------{
 
 
         // }----------{ MATERIAL EXPLORER }----------{
-        RenderMaterialExplorer();
+        RenderMaterialExplorer(fontHeader);
         // }----------{ MATERIAL EXPLORER }----------{
 
 
         // }----------{ TEXTURE PANEL     }----------{
-        RenderTexturesPanel();
+        RenderTexturesPanel(fontHeader);
         // }----------{ TEXTURE PANEL     }----------{
 
 
         ImGui::End();
+        ImGui::PopFont();
+        ImGui::PopStyleVar();
+        ImGui::PopStyleVar();
         ImGui::PopStyleVar();
         // }----------{ APP LAYOUT ENDS   }----------{
 
@@ -400,10 +429,6 @@ int main()
         auto duration = std::chrono::duration_cast<std::chrono::duration<float>>(end - start);
         frameTime = duration.count();
     }
-
-    glDeleteBuffers(1, &directionalLightBuffer);
-    glDeleteBuffers(1, &pointLightBuffer);
-    glDeleteBuffers(1, &spotlightBuffer);
 
     glfwDestroyWindow(window);
     glfwTerminate();

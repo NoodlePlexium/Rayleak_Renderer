@@ -78,14 +78,14 @@ public:
         glGenBuffers(1, &cameraPathVertexBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cameraPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * cameraPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, cameraPathVertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, cameraPathVertexBuffer);
 
         // LIGHT PATH BUFFER
         uint32_t lightPathVertexCount = SCA_W * SCA_H * (lightBounces+2);
         glGenBuffers(1, &lightPathVertexBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, lightPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * lightPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, lightPathVertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, lightPathVertexBuffer);
     }
 
     ~RenderSystem()
@@ -134,6 +134,13 @@ public:
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, lightPathVertexBuffer);
 
         // EMPTY TILE QUEUE
+        while (!TileQueue.empty()) TileQueue.pop();
+        accumulationFrame = 0;
+        frameCount = 0;
+    }
+
+    void RestartRender()
+    {
         while (!TileQueue.empty()) TileQueue.pop();
         accumulationFrame = 0;
         frameCount = 0;

@@ -85,6 +85,11 @@ struct CameraInfo
     vec3 right;
     vec3 up;
     float FOV;
+    uint DOF;
+    float focusDistance;
+    float aperture;
+    uint antiAliasing;
+    float exposure;
 };
 
 struct Ray
@@ -145,31 +150,35 @@ layout(binding = 4) readonly buffer BVHBuffer {
     BVH_Node bvhNodes[];
 };
 
-layout(binding = 5) readonly buffer PartitionBuffer {
+layout(binding = 5) readonly buffer SceneBVHBuffer {
+    BVH_Node sceneBvhNodes[];
+};
+
+layout(binding = 6) readonly buffer PartitionBuffer {
     MeshPartition meshPartitions[];
 };
 
-layout(binding = 6) readonly buffer EmissiveBuffer {
+layout(binding = 7) readonly buffer EmissiveBuffer {
     EmissiveTriangle emissiveTriangles[];
 };
 
-layout(binding = 7) readonly buffer DirectionalLightBuffer {
+layout(binding = 8) readonly buffer DirectionalLightBuffer {
     DirectionalLight directionalLights[];
 };
 
-layout(binding = 8) readonly buffer PointLightBuffer {
+layout(binding = 9) readonly buffer PointLightBuffer {
     PointLight pointLights[];
 };
 
-layout(binding = 9) readonly buffer SpotlightLightBuffer {
+layout(binding = 10) readonly buffer SpotlightLightBuffer {
     Spotlight spotlights[];
 };
 
-layout(binding = 10) buffer CameraPathVertexBuffer {
+layout(binding = 11) buffer CameraPathVertexBuffer {
     PathVertex cameraPathVertices[];
 };
 
-layout(binding = 11) buffer LightPathVertexBuffer {
+layout(binding = 12) buffer LightPathVertexBuffer {
     PathVertex lightPathVertices[];
 };
 
@@ -229,7 +238,7 @@ vec3 RandomHemisphereDirectionCosine(vec3 normal, uint seed)
     float u1 = Random(seed+103);
     float u2 = Random(seed+104);
     float r = sqrt(u1);
-    float theta = 2.0f * 3.141592f * u2;
+    float theta = 6.2831853f * u2;
     float x = r * cos(theta);
     float y = r * sin(theta);
     vec3 randDir = vec3(x, y, sqrt(max(0.0f, 1.0f - u1)));
@@ -249,6 +258,16 @@ vec3 RandomPointOnTriangle(uint v1_index, uint v2_index, uint v3_index, uint see
     return randomPoint;
 }
 
+// ADAPTED FROM USER Pommy https://stackoverflow.com/questions/5837572/generate-a-random-point-within-a-circle-uniformly
+vec2 RandomPointInCircle(uint seed)
+{
+    float rho = Random(seed);
+    float phi = Random(seed) * 6.2831853f;
+    float x = rho * cos(phi);
+    float y = rho * sin(phi);
+    return vec2(x, y);
+}
+
 float DegreesToRadians(float degrees)
 {
     return degrees * 0.01745329f;
@@ -261,7 +280,7 @@ float CosineInterpolation(float min, float max, float value)
     return cos(radians);
 }
 
-vec3 PixelRayPos(uint x, uint y, uint width, uint height)
+vec3 PixelRayPos(uint x, uint y, uint width, uint height, uint seed, bool antiAliased)
 {
     float FOV_Radians = DegreesToRadians(cameraInfo.FOV);
     float aspectRatio = float(width) / float(height);
@@ -271,9 +290,19 @@ vec3 PixelRayPos(uint x, uint y, uint width, uint height)
     float planeHeight = nearPlane * tan(FOV_Radians * 0.5f);
     float planeWidth = planeHeight * aspectRatio;
 
-    // NORMALISE PIXEL COORDINATES
-    float nx = (x) / (width - 1.0f);
-    float ny = (y) / (height - 1.0f);
+    // NORMALISED PIXEL COORDINATES
+    float nx, ny;
+    if (antiAliased)
+    {
+        vec2 randomCirclePoint = RandomPointInCircle(seed);
+        nx = (x + randomCirclePoint.x) / (width - 1.0f);
+        ny = (y + randomCirclePoint.y) / (height - 1.0f);
+    }
+    else
+    {
+        nx = (x) / (width - 1.0f);
+        ny = (y) / (height - 1.0f);
+    }
 
     // CALCULATE PIXEL COORDINATE IN PLANE SPACE
     vec3 localBL = vec3(-planeWidth * 0.5f, -planeHeight * 0.5f, nearPlane);
@@ -1111,7 +1140,7 @@ vec3 EvaluatePath(int segments, uint bounces, uint pixelIndex, uint seed)
     {
         if (cameraPathVertices[pathIndex + i].hitSky == 1)
         {
-            light += vec3(0.5f, 0.7f, 0.95f) * 0.0f;
+            light += vec3(0.5f, 0.7f, 0.95f) * 2.0f;
             continue;
         }
 
@@ -1170,17 +1199,27 @@ void main()
     if (pX > imageSize(renderImage).x || pY > imageSize(renderImage).y)
     return;
 
-    // CREATE CAMERA RAY FOR THIS PIXEL
-    Ray camRay;
-    camRay.origin = PixelRayPos(pX, pY, width, height);
-    camRay.dir = normalize(camRay.origin - cameraInfo.pos);
-
     // GENERATE A PSEUDORANDOM SEED
     uint seed = u_frameCount * width * height + pixelIndex;
+
+    // CREATE CAMERA RAY FOR THIS PIXEL
+    Ray camRay;
+    camRay.origin = PixelRayPos(pX, pY, width, height, seed + 313874256, cameraInfo.antiAliasing == 1);
+    camRay.dir = normalize(camRay.origin - cameraInfo.pos);
+
+    // DEPTH OF FIELD
+    if (cameraInfo.DOF == 1)
+    {
+        vec3 focalpoint = cameraInfo.pos + camRay.dir * cameraInfo.focusDistance;
+        vec2 randCirclePos = RandomPointInCircle(seed + 82194872) * cameraInfo.aperture;
+        camRay.origin += cameraInfo.right * randCirclePos.x + cameraInfo.up * randCirclePos.y;
+        camRay.dir = normalize(focalpoint - camRay.origin);
+    }
+
     
     // TRACE CAMERA TO GET PIXEL COLOUR
     int cameraSegments = CameraPath(camRay, u_bounces, pixelIndex, seed);
-    vec3 colour = EvaluatePath(cameraSegments, u_bounces, pixelIndex, seed);
+    vec3 colour = EvaluatePath(cameraSegments, u_bounces, pixelIndex, seed) * cameraInfo.exposure;
 
     // int lightVertices = LightPath(pixelIndex, seed);
     // int cameraVertices = CameraPath(camRay, u_bounces, pixelIndex, seed);
