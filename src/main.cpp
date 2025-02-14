@@ -121,17 +121,17 @@ int main()
         meshes[i]->materialIndex = 0;
     }
 
-    // APPLY ROOF MATERIAL
-    uint32_t roofMeshIndex = FindMeshByName("roof", meshes);
-    meshes[roofMeshIndex]->materialIndex = 1;
+    // // APPLY ROOF MATERIAL
+    // uint32_t roofMeshIndex = FindMeshByName("roof", meshes);
+    // meshes[roofMeshIndex]->materialIndex = 1;
 
-    // APPLY CURTAIN MATERIAL
-    uint32_t curtainMeshIndex = FindMeshByName("curtains", meshes);
-    meshes[curtainMeshIndex]->materialIndex = 2;
+    // // APPLY CURTAIN MATERIAL
+    // uint32_t curtainMeshIndex = FindMeshByName("curtains", meshes);
+    // meshes[curtainMeshIndex]->materialIndex = 2;
 
-    // APPLY BANNER MATERIAL
-    uint32_t bannerMeshIndex = FindMeshByName("banners", meshes);
-    meshes[bannerMeshIndex]->materialIndex = 3;
+    // // APPLY BANNER MATERIAL
+    // uint32_t bannerMeshIndex = FindMeshByName("banners", meshes);
+    // meshes[bannerMeshIndex]->materialIndex = 3;
 
     // }----------{ LOAD 3D MESHES }----------{
 

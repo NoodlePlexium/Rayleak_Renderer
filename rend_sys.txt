@@ -7,6 +7,7 @@
 #include <chrono>
 #include <queue>
 #include <iostream>
+#include <tuple>
 
 // PROJECT HEADERS
 #include "luminite_camera.h"
@@ -100,7 +101,7 @@ public:
         // RESERVE SPACE FOR GROUP TIMES
         uint32_t tilesX = static_cast<uint32_t>((static_cast<float>(SCA_W) + 32) / 32);
         uint32_t tilesY =  static_cast<uint32_t>((static_cast<float>(SCA_H) + 32) / 32);
-        groupTimes.reserve(tilesX * tilesY);
+        groupTimes.resize(tilesX * tilesY, 0.0f);
     }
 
     ~RenderSystem()
@@ -152,7 +153,7 @@ public:
         uint32_t tilesX = static_cast<uint32_t>((static_cast<float>(SCA_W) + 32) / 32);
         uint32_t tilesY =  static_cast<uint32_t>((static_cast<float>(SCA_H) + 32) / 32);
         groupTimes.clear();
-        groupTimes.reserve(tilesX * tilesY);
+        groupTimes.resize(tilesX * tilesY, 0.0f);
 
         // EMPTY TILE QUEUE
         TileQueue.clear();
@@ -231,6 +232,8 @@ public:
         {
             const RenderTile &tile = TileQueue.front();
 
+            // std::cout << tile.x << " " << tile.y << " " << tile.width << " " << tile.height << " " << tile.estimatedTime << std::endl;
+
             // UPDATE TILE OFFSET UNIFORM
             glUniform1ui(glGetUniformLocation(pathtraceShader, "u_tileX"), tile.x);
             glUniform1ui(glGetUniformLocation(pathtraceShader, "u_tileY"), tile.y);
@@ -256,7 +259,6 @@ public:
 
             // REMOVE TILE FROM QUEUE
             TileQueue.erase(TileQueue.begin());
-
 
             auto now = std::chrono::high_resolution_clock::now();
             float totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
@@ -306,7 +308,8 @@ private:
 
 
     void ScheduleRenderTiles(int x_blocks, int y_blocks, uint32_t accumulationFrame)
-    {
+    {  
+        std::cout << accumulationFrame << std::endl;
         if (dynamicScene) 
         {
             RenderTile tile;
@@ -348,26 +351,26 @@ private:
         { 
             int x = 0;
             int y = 0;
-            while (true)
+            while (x < x_blocks && y < y_blocks)
             {
                 // CREATE NEW RENDER TILE
                 std::tuple<int, int> coords = FindAvailableTileSpace(x_blocks, y_blocks);
-                x = std::get<0>(coords);
-                y = std::get<1>(coords);
-                if (x >= x_blocks || y >= y_blocks) break;
-
+                // std::cout << "x: " << std::get<0>(coords) << " y: " << std::get<1>(coords) << std::endl;
                 RenderTile tile;
                 tile.estimatedTime = 0;
                 tile.width = 1;
                 tile.height = 1;
                 tile.x = std::get<0>(coords);
                 tile.y = std::get<1>(coords);
+                x = std::get<0>(coords);
+                y = std::get<1>(coords);
 
                 GrowTile(tile, x_blocks, y_blocks);
                 TileQueue.push_back(tile);
             }
         }
     }
+
     bool isHorizontalSpace(int x, int y, int width, int y_blocks)
     {
         if (y >= y_blocks) return false;
@@ -402,7 +405,12 @@ private:
         for (int i=0; i<width; i++)
         {
             totalTime += groupTimes[y * x_blocks + (i + x)];
+            // std::cout << "time: " << groupTimes[y * x_blocks + (i + x)] << std::endl;
+            // // std::cout << "index: " << y * x_blocks + (i + x) << std::endl;
+            // std::cout << "group times size: " << groupTimes.size() << std::endl;
         }
+        // std::cout << "group times 1: " << groupTimes[400] << std::endl;
+        // std::cout << "total time: " << totalTime << std::endl;
         return totalTime;
     }
 
@@ -420,36 +428,23 @@ private:
     {
         while (tile.estimatedTime < renderBudget)
         {
-            bool hSpace = isHorizontalSpace(tile.x, tile.y + tile.height, tile.width, y_blocks);
-            bool vSpace = isVerticalSpace(tile.x + tile.width, tile.y, tile.width, x_blocks);
-
-            if (hSpace)
+            if (isHorizontalSpace(tile.x, tile.y + tile.height, tile.width, y_blocks))
             {
                 float hTime = GetHorizontalTime(tile.x, tile.y + tile.height, tile.width, x_blocks);
                 if (tile.estimatedTime + hTime < renderBudget) {
                     tile.height += 1;
                     tile.estimatedTime += hTime;
                 }
-                else
-                {
-                    break;
-                }
             }
 
-            if (vSpace)
+            if (isVerticalSpace(tile.x + tile.width, tile.y, tile.width, x_blocks))
             {
                 float vTime = GetVerticalTime(tile.x + tile.width, tile.y, tile.height, x_blocks);
                 if (tile.estimatedTime + vTime < renderBudget) {
                     tile.width += 1;
                     tile.estimatedTime += vTime;
                 }
-                else
-                {
-                    break;
-                }
             }
-
-            if (!hSpace && !vSpace) break;
         }
     }
 
@@ -457,27 +452,15 @@ private:
     {
         int x = 0;
         int y = 0;
-        if (TileQueue.size() == 0) { return std::make_tuple(0, 0); }
-
-        while (y < y_blocks)
+        for (int t = 0; t<TileQueue.size(); t++)
         {
-            if (!isVerticalSpace(x, y, 1, x_blocks))
-            {
-                x += 1;
-            }
-            else
-            {
-                break;
-            }
-            if (x >= x_blocks)
-            {
-                x = 0;
-                y += 1;
-            }
+            const RenderTile &tile = TileQueue[t];
+            int tileBottomMost = tile.y + tile.height;
+            int tileRightMost = tile.x + tile.width;
+            if (tileBottomMost + 1 > y) y = tileBottomMost + 1;
+            if (tileRightMost + 1 > x) x = tileRightMost + 1;
         }
         return std::make_tuple(x, y);
     }
 };
-
-
 

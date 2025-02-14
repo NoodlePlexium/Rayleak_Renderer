@@ -346,25 +346,49 @@ private:
         }
         else 
         { 
+            int minTileWidth = 4;
             int x = 0;
             int y = 0;
-            while (true)
+            while (y < y_blocks)
             {
                 // CREATE NEW RENDER TILE
-                std::tuple<int, int> coords = FindAvailableTileSpace(x_blocks, y_blocks);
-                x = std::get<0>(coords);
-                y = std::get<1>(coords);
-                if (x >= x_blocks || y >= y_blocks) break;
-
                 RenderTile tile;
-                tile.estimatedTime = 0;
-                tile.width = 1;
-                tile.height = 1;
-                tile.x = std::get<0>(coords);
-                tile.y = std::get<1>(coords);
+                tile.x = x;
+                tile.y = y;
+                tile.height = std::min(minTileWidth, y_blocks - tile.y);
 
-                GrowTile(tile, x_blocks, y_blocks);
+                int numAdditions = 0;
+                float cumulativeTime = 0;
+                while (x < x_blocks && cumulativeTime < renderBudget)
+                {
+                    // CALCULATE TIME FOR NEXT SQUARE
+                    for (int xf=x; xf<std::min(x+minTileWidth, x_blocks); xf++)
+                    {
+                        for (int yf=y; yf<std::min(y+minTileWidth, y_blocks); yf++)
+                        {
+                            cumulativeTime += groupTimes[yf * x_blocks + xf];
+                        }
+                    }
+                    if ((numAdditions > 1 && cumulativeTime < renderBudget) || numAdditions == 0)
+                    {
+                        int widthAddition = std::min(minTileWidth, x_blocks - x);
+                        tile.width += widthAddition;
+                        x += widthAddition;
+                    }
+                }
+
+                std::cout << cumulativeTime << std::endl;
+
+                // ADD RENDER TILE TO QUEUE
                 TileQueue.push_back(tile);
+
+
+                // MOVE TO NEXT ROW
+                if (x >= x_blocks)
+                {
+                    x = 0;
+                    y += tile.height;
+                }
             }
         }
     }
@@ -420,36 +444,23 @@ private:
     {
         while (tile.estimatedTime < renderBudget)
         {
-            bool hSpace = isHorizontalSpace(tile.x, tile.y + tile.height, tile.width, y_blocks);
-            bool vSpace = isVerticalSpace(tile.x + tile.width, tile.y, tile.width, x_blocks);
-
-            if (hSpace)
+            if (isHorizontalSpace(tile.x, tile.y + tile.height, tile.width, y_blocks))
             {
                 float hTime = GetHorizontalTime(tile.x, tile.y + tile.height, tile.width, x_blocks);
                 if (tile.estimatedTime + hTime < renderBudget) {
                     tile.height += 1;
                     tile.estimatedTime += hTime;
                 }
-                else
-                {
-                    break;
-                }
             }
 
-            if (vSpace)
+            if (isVerticalSpace(tile.x + tile.width, tile.y, tile.width, x_blocks))
             {
                 float vTime = GetVerticalTime(tile.x + tile.width, tile.y, tile.height, x_blocks);
                 if (tile.estimatedTime + vTime < renderBudget) {
                     tile.width += 1;
                     tile.estimatedTime += vTime;
                 }
-                else
-                {
-                    break;
-                }
             }
-
-            if (!hSpace && !vSpace) break;
         }
     }
 
@@ -457,23 +468,13 @@ private:
     {
         int x = 0;
         int y = 0;
-        if (TileQueue.size() == 0) { return std::make_tuple(0, 0); }
-
-        while (y < y_blocks)
+        for (int t = 0; t<TileQueue.size(); t++)
         {
-            if (!isVerticalSpace(x, y, 1, x_blocks))
-            {
-                x += 1;
-            }
-            else
-            {
-                break;
-            }
-            if (x >= x_blocks)
-            {
-                x = 0;
-                y += 1;
-            }
+            const RenderTile &tile = TileQueue[t];
+            int tileBottomMost = tile.y + tile.height;
+            int tileRightMost = tile.x + tile.width;
+            if (tileBottomMost + 1 > y) y = tileBottomMost + 1;
+            if (tileRightMost + 1 > x) x = tileRightMost + 1;
         }
         return std::make_tuple(x, y);
     }
