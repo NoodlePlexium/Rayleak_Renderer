@@ -36,42 +36,40 @@ public:
         glUniform1ui(cameraInfoAntiAliasingLocation, anti_aliasing);
         glUniform1f(cameraInfoExposureLocation, exposure);
     }
-
-    void UpdateCameraVectors() {
-        // Convert degrees to radians
-        float pitch = glm::radians(rotation.x); // Rotation around X-axis
-        float yaw = glm::radians(rotation.y);   // Rotation around Y-axis
-
-        // Calculate new forward vector
-        forward = -glm::normalize(glm::vec3(
-            cos(yaw) * cos(pitch),
-            sin(pitch),
-            sin(yaw) * cos(pitch)
-        ));
-
-        // Calculate right vector (perpendicular to forward & world up)
-        right = glm::normalize(glm::cross(forward, glm::vec3(0.0f, 1.0f, 0.0f)));
-
-        // Calculate up vector (perpendicular to forward & right)
-        up = glm::normalize(glm::cross(right, forward));
-    }
-
-    bool SettingsChanged()
+    
+    void UpdateCameraVectors()
     {
-        bool changed = false;
-        changed = changed | (fov != prev_fov);
-        changed = changed | (focus_distance != prev_focus_distance);
-        changed = changed | (fStop != prev_fStop);
-        changed = changed | (exposure != prev_exposure);
-        changed = changed | (dof != prev_dof);
-        changed = changed | (anti_aliasing != prev_anti_aliasing);
-        prev_fov = fov;
-        prev_focus_distance = focus_distance;
-        prev_fStop = fStop;
-        prev_exposure = exposure;
-        prev_dof = dof;
-        prev_anti_aliasing = anti_aliasing;
-        return changed;
+        float rotationX = glm::radians(rotation.x);
+        float rotationY = glm::radians(rotation.y - 90);
+        float rotationZ = glm::radians(rotation.z);
+
+        // ROTATION MATRICES FROM USER legends2k https://stackoverflow.com/questions/14607640/rotating-a-vector-in-3d-space
+        glm::mat3x3 xRot
+        {
+            1, 0, 0,
+            0, std::cos(rotationX), -std::sin(rotationX),
+            0, std::sin(rotationX), std::cos(rotationX)
+        };
+
+        glm::mat3x3 yRot
+        {
+            std::cos(rotationY), 0, std::sin(rotationY),
+            0, 1, 0,
+            -std::sin(rotationY), 0, std::cos(rotationY)
+        };
+
+        glm::mat3x3 zRot
+        {
+            std::cos(rotationZ), -std::sin(rotationZ), 0,
+            std::sin(rotationZ), std::cos(rotationZ), 0,
+            0, 0, 1
+        };
+
+        glm::mat3x3 rotationMat = zRot * yRot * xRot;
+
+        forward = rotationMat * glm::vec3(0, 0, -1);
+        up = zRot * rotationMat * glm::vec3(0, 1, 0);
+        right = zRot * rotationMat * glm::vec3(1, 0, 0);
     }
 
     // TRANSFORM
@@ -93,9 +91,6 @@ public:
     float prev_fov;
     float prev_focus_distance;
     float prev_fStop;
-    float prev_exposure;
-    bool  prev_dof;
-    bool  prev_anti_aliasing;
 
 
 private:
@@ -111,3 +106,4 @@ private:
     unsigned int cameraInfoAntiAliasingLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.antiAliasing");
     unsigned int cameraInfoExposureLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.exposure");
 };
+

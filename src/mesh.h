@@ -3,12 +3,10 @@
 // EXTERNAL LIBRARIES
 #define TINYOBJLOADER_IMPLEMENTATION
 #define TINYOBJLOADER_USE_MAPBOX_EARCUT
-#define STB_IMAGE_IMPLEMENTATION
 #include "tiny_obj_loader.h"
 #include "glm/glm.hpp"
 #include "glm/gtc/matrix_transform.hpp"
 #include "glm/gtc/constants.hpp"
-#include "stb_image.h"
 
 // STANDARD LIBRARY
 #include <vector>
@@ -19,8 +17,9 @@
 #include <omp.h>
 
 // PROJECT HEADERS
-#include "luminite_debug.h"
-
+#include "debug.h"
+#include "material.h"
+#include "utils.h"
 
 struct MeshPartition
 {
@@ -40,121 +39,6 @@ struct BVH_Node
     BVH_Node() : leftChild(0), rightChild(0), firstIndex(0), indexCount(0) {}
 };
 
-struct Material
-{
-    alignas(16) glm::vec3 colour;
-    float roughness;
-    float emission;
-    float IOR;
-    int refractive;
-    uint64_t albedoHandle;
-    uint64_t normalHandle;
-    uint64_t roughnessHandle;
-    uint32_t textureFlags;
-
-    Material()
-    {
-        colour = glm::vec3(0.8f, 0.8f, 0.8f);
-        roughness = 1.0f;
-        emission = 0.0f;
-        IOR = 1.45;
-        refractive = 0;
-        albedoHandle = -1;
-        normalHandle = -1;
-        roughnessHandle = -1;
-        textureFlags = 0;
-    }
-
-    void LoadAlbedo(std::string filepath)
-    {
-        // UNLOAD EXISTING TEXTURE IF IT EXISTS
-        if (albedoHandle != -1) glMakeTextureHandleNonResidentARB(albedoHandle);
-
-        int width, height, bpp;
-        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 3);
-        if (!localbuffer)
-        {
-            std::cerr << "[LoadAlbedo] Failed! Could not find image at: " << filepath << std::endl;
-            return;
-        }
-
-        unsigned int texture;
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, localbuffer);
-        glGenerateMipmap(GL_TEXTURE_2D); 
-        stbi_image_free(localbuffer);
-
-        albedoHandle = glGetTextureHandleARB(texture);
-        textureFlags |= (1 << 0);
-
-        glMakeTextureHandleResidentARB(albedoHandle);
-    }
-
-    void LoadNormal(std::string filepath)
-    {
-        // UNLOAD EXISTING TEXTURE IF IT EXISTS
-        if (normalHandle != -1) glMakeTextureHandleNonResidentARB(normalHandle);
-
-        int width, height, bpp;
-        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 3);
-        if (!localbuffer)
-        {
-            std::cerr << "[LoadNormal] Failed! Could not find image at: " << filepath << std::endl;
-            return;
-        }
-
-        unsigned int texture;
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, localbuffer);
-        glGenerateMipmap(GL_TEXTURE_2D); 
-        stbi_image_free(localbuffer);
-
-        normalHandle = glGetTextureHandleARB(texture);
-        textureFlags |= (1 << 1);
-
-        glMakeTextureHandleResidentARB(normalHandle);
-    }
-
-    void LoadRoughness(std::string filepath)
-    {
-        // UNLOAD EXISTING TEXTURE IF IT EXISTS
-        if (roughnessHandle != -1) glMakeTextureHandleNonResidentARB(roughnessHandle);
-
-        int width, height, bpp;
-        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 1);
-        if (!localbuffer)
-        {
-            std::cerr << "[LoadRoughness] Failed! Could not find image at: " << filepath << std::endl;
-            return;
-        }
-
-        unsigned int texture;
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0, GL_RED, GL_UNSIGNED_BYTE, localbuffer);
-        glGenerateMipmap(GL_TEXTURE_2D); 
-        stbi_image_free(localbuffer);
-
-        roughnessHandle = glGetTextureHandleARB(texture);
-        textureFlags |= (1 << 2);
-
-        glMakeTextureHandleResidentARB(roughnessHandle);
-    }
-};
 
 struct Vertex
 {
@@ -194,15 +78,15 @@ struct VertexHasher
     }
 };
 
-
 struct Mesh
 {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices;
-    std::string name;
     glm::vec3 position;
     glm::vec3 rotation;
     glm::vec3 scale;
+
+    std::string name;
 
     BVH_Node* bvhNodes;
     uint32_t nodesUsed = 1;
@@ -382,16 +266,37 @@ struct Mesh
 };
 
 
-void LoadOBJ(const std::string& filepath, std::vector<Mesh*>& meshes)
+struct Model
+{
+    uint32_t id;
+    std::vector<Mesh*> submeshPtrs;
+    char* name;
+    char* tempName;
+    bool inScene = false;
+
+    Model()
+    {
+        name = new char[32];
+        tempName = new char[32];
+        strcpy_s(name, 32, "material");
+        strcpy_s(tempName, 32, "material");
+    }
+};
+
+void LoadOBJ(const char* filepath, std::vector<Mesh*>& meshes, std::vector<Model>& models, uint32_t &modelIncrement)
 {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
     std::string warn, err;
 
-    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filepath.c_str())) {
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filepath)) {
         throw std::runtime_error(warn + err);
     }
+
+    Model model;
+    strcpy_s(model.name, 32, ExtractName(filepath).substr(0, 32).c_str());
+    strcpy_s(model.tempName, 32, model.name);
 
     // FOR EACH MESH IN THE FILE
     Debug::StartTimer();
@@ -442,7 +347,10 @@ void LoadOBJ(const std::string& filepath, std::vector<Mesh*>& meshes)
         }
         mesh->BuildBVH();
         meshes.push_back(mesh);  
+        model.submeshPtrs.push_back(mesh);
     }
+    models.push_back(model);
+    model.id = modelIncrement++;
     Debug::EndTimer();
 }
 

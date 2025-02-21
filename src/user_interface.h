@@ -1,0 +1,948 @@
+// EXTERNAL LIBRARIES
+#include <backends/imgui_impl_opengl3.h>
+#include <backends/imgui_impl_glfw.h>
+#include <imgui.h>
+#include "../lib/tinyfiledialogs/tinyfiledialogs.h"
+
+// STANDARD LIBRARY
+#include <cstdint>
+
+// PROJECT HEADERS
+#include "object_manager.h"
+
+class UserInterface
+{
+public:
+
+    bool restartRender;
+
+    UserInterface(const unsigned int _pathtraceShader)
+    {
+        pathtraceShader = _pathtraceShader;
+        fontBody = LoadFont("fonts/Inter/Inter-VariableFont_opsz,wght.ttf", 18);
+        fontHeader = LoadFont("fonts/Inter/Inter-VariableFont_opsz,wght.ttf", 24);
+        LoadIcons();
+    }
+
+    void NewFrame()
+    {
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+        restartRender = false;
+    }
+
+    void RenderUI()
+    {
+        ImGui::Render();
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
+
+    void ShutdownImGUI()
+    {
+        ImGui_ImplOpenGL3_Shutdown();
+        ImGui_ImplGlfw_Shutdown();
+        ImGui::DestroyContext();
+    }
+
+    void LoadIcons()
+    {
+        OBJ_Icon.LoadImage("./icons/obj_icon.png");
+    }
+
+    void BeginAppLayout(bool cursorOverViewport)
+    {
+        ImGui::PushFont(fontBody);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(5, 5));
+        ImGui::PushStyleColor(ImGuiCol_ScrollbarBg, HexToRGBA(SCROLLBAR_BG));
+        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImGui::GetMainViewport()->Size, ImGuiCond_Always);
+        ImGui::SetNextWindowBgAlpha(0.0f);
+        ImGui::Begin(
+            "App Layout", nullptr, 
+            ImGuiWindowFlags_NoResize | 
+            ImGuiWindowFlags_NoMove | 
+            ImGuiWindowFlags_NoTitleBar | 
+            ImGuiWindowFlags_NoCollapse
+        );
+
+
+        if (draggedModelIndex != -1)
+        {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+                std::cout << "Releasing dragged model" << std::endl;
+                draggedModelReleased = true;
+            }
+        }
+
+        if (releasingDraggedTexture)
+        {
+            std::cout << "Texture dropped" << std::endl;
+            draggedTextureIndex = -1;
+            releasingDraggedTexture = false;
+            droppedTextureIntoSlot = false;
+        }
+        
+        if (draggedTextureIndex != -1)
+        {
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
+            
+            if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
+            {
+                std::cout << "Releasing dragged texture" << std::endl;
+                releasingDraggedTexture = true;
+            }
+        }
+    }
+
+    void EndAppLayout()
+    {
+        ImGui::End();
+        ImGui::PopFont();
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor();
+    }
+
+    void RenderViewportPanel(int width, int height, float frameTime, bool cursorOverViewport, unsigned int frameBufferTextureID, Camera& camera, ModelManager& modelManager, std::vector<Model>& models)
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::BeginChild("Viewport", ImVec2(width, height), true);
+        ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddImage(
+            (ImTextureID)(intptr_t)frameBufferTextureID,
+            cursorPos,
+            ImVec2(cursorPos.x + width, cursorPos.y + height),
+            ImVec2(0, 1),
+            ImVec2(1, 0)
+        );
+
+        std::string frameTimeString = std::to_string(frameTime * 1000) + "ms";
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 128, 255));
+        ImGui::Text("%s", frameTimeString.c_str());
+        ImGui::PopStyleColor();
+
+        if (draggedModelReleased)
+        {
+            if (cursorOverViewport)
+            {
+                std::cout << "Model dragged into scene" << std::endl;
+                modelManager.AddModelToScene(models[draggedModelIndex], pathtraceShader);
+                restartRender = true;
+            }
+            else
+            {
+                std::cout << "Model dropped" << std::endl;
+            }
+            draggedModelIndex = -1;
+            draggedModelReleased = false;
+            std::cout << "model " << draggedModelIndex << " selected\n";
+        }
+
+        RenderSettingsPanel(camera);
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+    }
+
+    void RenderSettingsPanel(Camera& camera)
+    {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 20.0f);
+        ImGui::BeginChild("Settings Panel", ImVec2(240.0f, 0), false);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 3));
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.1f));
+            ImGui::BeginChild("Settings", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
+
+            bool changedSettings = false;
+            PaddedText("Camera Settings", 5.0f);
+            changedSettings |= FloatAttribute("Field of View", "FOV", "", 3, &camera.fov);
+            changedSettings |= CheckboxAttribute("Depth of Field", "DOF", 3, &camera.dof);
+            changedSettings |= FloatAttribute("Focus Distance", "FOCUS", "m", 3, &camera.focus_distance);
+            changedSettings |= FloatAttribute("fStops", "fStops", "", 3, &camera.fStop);
+            changedSettings |= CheckboxAttribute("Anti Aliasing", "AA", 3, &camera.anti_aliasing);
+            changedSettings |= FloatAttribute("Exposure", "EXPOSURE", "", 3, &camera.exposure);
+
+            if (changedSettings) restartRender = true;
+
+            ImGui::EndChild();
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor();
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+    }
+
+    void RenderObjectsPanel(const std::vector<Mesh*> &meshes, float VIEWPORT_HEIGHT)
+    {
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA("#000000"));
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::PushStyleColor(ImGuiCol_Button, HexToRGBA(BUTTON));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0)); 
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0)); 
+        ImGui::BeginChild("Objects", ImVec2(0, VIEWPORT_HEIGHT), true);
+        PanelTitleBar("Objects");
+
+        // OBJECTS CONTAINER
+        ImGui::BeginChild("Objects Container", ImVec2(0, SpaceY()), false);
+        ImGui::Dummy(ImVec2(1, GAP));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, GAP));
+        ImGui::Indent(GAP);
+        for (int i=0; i<meshes.size(); ++i)
+        {
+            ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+            ImGui::PushID(i);
+            if (ImGui::Button(meshes[i]->name.c_str(), ImVec2(SpaceX() - GAP, 0)))
+            {
+                // std::to_string(meshes[i]->id).c_str()
+            }
+            ImGui::PopID();
+            ImGui::PopStyleVar();
+        }
+        ImGui::Unindent();
+        ImGui::PopStyleVar();
+        ImGui::EndChild();
+        // OBJECTS CONTAINER
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar(2);
+    }
+
+    void RenderModelExplorer(std::vector<Mesh*> &meshes, std::vector<Model>& models, uint32_t &meshIncrement)
+    {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0)); 
+        ImGui::BeginChild("Model Explorer", ImVec2(SpaceX() * 0.333f, SpaceY()), true);
+        ModelPanelHeader(meshes, models, meshIncrement);
+
+        float materialContainerWidth = 0;
+
+        // MODEL CONTAINER GRID
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(MODEL_PANEL_GAP, MODEL_PANEL_GAP));
+        ImGui::BeginChild("Model Container", ImVec2(SpaceX() - materialContainerWidth, SpaceY()), false);
+        ImGui::Dummy(ImVec2(1, 0));
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + MODEL_PANEL_GAP);
+        float hSpace = SpaceX() - materialContainerWidth;
+        float usedHSpace = MODEL_PANEL_GAP;
+        for (int i=0; i<models.size(); i++)
+        {   
+            if (usedHSpace + MODEL_THUMBNAIL_SIZE < hSpace && i > 0) 
+            {
+                ImGui::SameLine();
+            }
+            else if (i > 0)
+            {
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + MODEL_PANEL_GAP);
+                usedHSpace = MODEL_PANEL_GAP;
+            }
+            ModelComponent(models[i], i);
+            usedHSpace += MODEL_THUMBNAIL_SIZE + MODEL_PANEL_GAP;
+        }
+        ImGui::Dummy(ImVec2(1, 0));
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+    
+
+        // // MATERIAL CONTAINER GRID
+        // ImGui::SameLine();
+        // ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GAP, GAP));
+        // ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA("#121212"));
+        // ImGui::BeginChild("Model Material Container", ImVec2(SpaceX(), SpaceY()), false);
+        // ImGui::Dummy(ImVec2(1, 0));
+
+        // // MODEL CONTAINER GRID
+        // int id = 0;
+        // for (int i=0; i<models.size(); i++)
+        // {
+        //     for (int j=0; j<models[i].materialNames.size(); j++)
+        //     {
+        //         ModelMaterialComponent(models[i].materialNames[j].c_str(), id++);
+        //         std::cout << models[i].materialNames[j].c_str() << std::endl;
+        //     }
+        // }
+
+        // ImGui::Dummy(ImVec2(1, 0));
+        // ImGui::EndChild();
+        // ImGui::PopStyleVar();
+        // ImGui::PopStyleColor();
+        // // MATERIAL CONTAINER GRID
+
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
+    }
+
+    void RenderMaterialExplorer(std::vector<Material>& materials, std::vector<Texture>& textures, ModelManager& modelManager)
+    {   
+        // MATERIAL EXPLORER PANEL
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0,0,0,1));
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0)); 
+        ImGui::BeginChild("Material Explorer", ImVec2(SpaceX() * 0.5f, SpaceY()), true);
+        
+        // MATERIAL EXPLORER TITLE BAR
+        MaterialPanelHeader(materials, modelManager);
+
+        float materialEditorWidth = 280;
+
+        // MATERIAL CONTAINER GRID
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(MATERIAL_PANEL_GAP, MATERIAL_PANEL_GAP));
+        ImGui::BeginChild("Material Container", ImVec2(SpaceX()-materialEditorWidth, SpaceY()), false);
+        ImGui::Dummy(ImVec2(1,0));
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + MATERIAL_PANEL_GAP);
+        float hSpace = SpaceX();
+        float usedHSpace = MATERIAL_PANEL_GAP;
+        for (int i=0; i<materials.size(); i++)
+        {   
+            if (usedHSpace + MODEL_THUMBNAIL_SIZE < hSpace && i > 0) { ImGui::SameLine(); }
+            else if (i > 0)
+            {
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + MATERIAL_PANEL_GAP);
+                usedHSpace = MATERIAL_PANEL_GAP;
+            }
+            MaterialComponent(materials[i], i);
+            usedHSpace += MODEL_THUMBNAIL_SIZE + MATERIAL_PANEL_GAP;
+        }
+        ImGui::Dummy(ImVec2(1,0));
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+        // END MATERIAL CONTAINER GRID
+
+
+
+        // MATERIAL EDITOR CONTAINER
+        ImGui::SameLine();
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(MATERIAL_EDITOR_BG));
+        ImGui::BeginChild("Material Editor", ImVec2(SpaceX(), SpaceY()), false);
+
+        if (selectedMaterialIndex != -1)
+        {   
+            bool updatedMaterial = false;
+            MaterialData& materialData = materials[selectedMaterialIndex].data;
+            std::string baseID = std::to_string(selectedMaterialIndex).c_str();
+            PaddedText(materials[selectedMaterialIndex].name, 5);
+            float col[3];
+            col[0] = materialData.colour.x;
+            col[1] = materialData.colour.y;
+            col[2] = materialData.colour.z;
+            ImGui::ColorPicker3("Colour Picker", col, 0);
+            materialData.colour.x = col[0];
+            materialData.colour.y = col[1];
+            materialData.colour.z = col[2];
+            std::string roughnessID = std::string("Material Roughness") + baseID;
+            std::string emissionID = std::string("Material Emission") + baseID;
+            std::string refractiveID = std::string("Material Refractive") + baseID;
+            std::string iorID = std::string("Material IOR") + baseID;
+            updatedMaterial |= FloatAttribute("roughness", roughnessID.c_str(), "", 3, &materialData.roughness);
+            updatedMaterial |= FloatAttribute("emission", emissionID.c_str(), "", 3, &materialData.emission);
+            bool refractive = materialData.refractive == 1;
+            updatedMaterial |= CheckboxAttribute("refractive", refractiveID.c_str(), 3, &refractive);
+            updatedMaterial |= FloatAttribute("Index of Refraction", iorID.c_str(), "", 3, &materialData.IOR);
+
+            // HANDLE REFRACTIVE NON BOOL CASE
+            if (refractive) materialData.refractive = 1;
+            else materialData.refractive = 0;
+
+            MaterialTextureSlot("Albedo Map", materials[selectedMaterialIndex], textures, 0, updatedMaterial);
+            MaterialTextureSlot("Normal Map", materials[selectedMaterialIndex], textures, 1, updatedMaterial);
+            MaterialTextureSlot("Roughness Map", materials[selectedMaterialIndex], textures, 2, updatedMaterial);
+
+
+            if (updatedMaterial) 
+            {
+                // UPDATE MATERIAL SETTINGS ON THE GPU
+                modelManager.UpdateMaterial(materialData, selectedMaterialIndex);
+
+                // RESTART RENDER
+                restartRender = true;
+            }
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        // END MATERIAL EDITOR CONTAINER
+
+        // END MATERIAL PANEL 
+        ImGui::EndChild();
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar();
+    }
+
+    void RenderTexturesPanel(std::vector<Texture> &textures)
+    {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0)); 
+        ImGui::SameLine();
+        ImGui::BeginChild("Texture Panel", ImVec2(0, SpaceY()), true);
+        TexturePanelHeader(textures);
+
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(TEXTURE_PANEL_GAP, TEXTURE_PANEL_GAP));
+        ImGui::BeginChild("Textures Container", ImVec2(SpaceX(), SpaceY()), false);
+        ImGui::Dummy(ImVec2(1, 0));
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + TEXTURE_PANEL_GAP);
+        float hSpace = SpaceX();
+        float usedHSpace = TEXTURE_PANEL_GAP;
+        for (int i=0; i<textures.size(); i++)
+        {   
+            if (usedHSpace + TEXTURE_THUMBNAIL_SIZE < hSpace && i > 0) 
+            {
+                ImGui::SameLine();
+            }
+            else if (i > 0)
+            {
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + TEXTURE_PANEL_GAP);
+                usedHSpace = TEXTURE_PANEL_GAP;
+            }
+            TextureComponent(textures[i], i);
+            usedHSpace += TEXTURE_THUMBNAIL_SIZE + TEXTURE_PANEL_GAP;
+        }
+
+        ImGui::Dummy(ImVec2(1, 0));
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar();
+    }
+
+private:
+    unsigned int pathtraceShader;
+    ImFont* fontBody;
+    ImFont* fontHeader;
+    Texture OBJ_Icon;
+
+    const char* BORDER = "#3d444d";
+    const char* ATTRIBUTE_BG = "#2a2f36";
+    const char* MATERIAL_EDITOR_BG = "#0f1012";
+    const char* SCROLLBAR_BG = "#0e0e0f";
+    const char* BUTTON = "#1a2129";
+    const char* BUTTON_HOVER = "#516c8a";
+    const char* SELECTED = "#387ccf";
+    const float GAP = 3;
+    const float TEXTURE_PANEL_GAP = 5;
+    const float TEXTURE_THUMBNAIL_SIZE = 125;
+    const float MODEL_PANEL_GAP = 5;
+    const float MODEL_THUMBNAIL_SIZE = 104;
+    const float MATERIAL_PANEL_GAP = 5;
+    const float MATERIAL_THUMBNAIL_SIZE = 104;
+    const float MATERIAL_TEXTURE_SLOT_SIZE = 100;
+
+    // MODEL PANEL CONTROLS
+    int draggedModelIndex = -1;
+    bool draggedModelReleased = false;
+
+    // MATERIAL PANEL CONTROLS
+    int selectedMaterialIndex = -1;
+
+    // TEXTURE PANEL CONTROLS
+    int draggedTextureIndex = -1;
+    bool releasingDraggedTexture = false;
+    bool droppedTextureIntoSlot = false;
+
+    // ADAPTED FROM Tor Klingberg https://stackoverflow.com/questions/3723846/convert-from-hex-color-to-rgb-struct-in-c
+    ImVec4 HexToRGBA(const char* hex)
+    {
+        int r, g, b;
+        // Mateen Ulhaq remove first char in array https://stackoverflow.com/questions/5711490/c-remove-the-first-character-of-an-array
+        sscanf_s(hex + 1, "%02x%02x%02x", &r, &g, &b);
+        return ImVec4(
+            static_cast<float>(r) / 255,
+            static_cast<float>(g) / 255, 
+            static_cast<float>(b) / 255, 1.0f);
+    }
+    
+    ImFont* LoadFont(const char* fontpath, float size)
+    {
+        ImGuiIO& io = ImGui::GetIO();
+        return io.Fonts->AddFontFromFileTTF(fontpath, size);
+    }
+
+    float SpaceX()
+    {
+        return ImGui::GetContentRegionAvail().x;
+    }
+
+    float SpaceY()
+    {
+        return ImGui::GetContentRegionAvail().y;
+    }
+
+    void PaddedText(const char* text, float padding)
+    {
+        ImGui::Indent(padding);
+        ImGui::Text("%s", text); 
+        ImGui::Unindent(padding);
+    }
+
+    bool FloatAttribute(std::string label, const char* id, const char* suffix, float padding, float* value)
+    {
+        bool changed = false;
+        std::string frameID = "###" + std::string(id);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(ATTRIBUTE_BG));
+        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX(), 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        std::string uniqueID = "##" + std::string(id);
+        std::string format = "%.2f" + std::string(suffix);
+        ImGui::Dummy(ImVec2(1, padding));
+        ImGui::Indent(padding); 
+        ImGui::Text("%s", label.c_str());   
+        ImGui::SameLine(SpaceX() - 100); 
+        ImGui::PushItemWidth(100);
+        float tempValue = *value;
+        ImGui::InputFloat(uniqueID.c_str(), &tempValue, 0, 0, format.c_str());
+        if (ImGui::IsItemDeactivatedAfterEdit())
+        {
+            changed = *value != tempValue; 
+            *value = tempValue; 
+        }
+        ImGui::PopItemWidth();
+        ImGui::Unindent(padding); 
+        ImGui::Dummy(ImVec2(1, padding)); 
+        ImGui::PopStyleVar();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        return changed;
+    }
+
+    bool CheckboxAttribute(std::string label, const char* id, float padding, bool* value)
+    {
+        bool changed = false;
+        std::string frameID = "###" + std::string(id);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(ATTRIBUTE_BG));
+        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX(), 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        std::string uniqueID = "##" + std::string(id);
+        ImGui::Dummy(ImVec2(1, padding)); // VERTICAL PADDING
+        ImGui::Indent(padding); // HORIZONTAL PADDING
+        ImGui::Text("%s", label.c_str());   
+        ImGui::SameLine(SpaceX() - 100.0f); 
+        if (ImGui::Checkbox(uniqueID.c_str(), value))
+        {
+            changed = true;
+        }
+        ImGui::Unindent(padding); // HORIZONTAL PADDING
+        ImGui::Dummy(ImVec2(1, padding)); // VERTICAL PADDING
+        ImGui::PopStyleVar();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        return changed;
+    }
+
+    void PanelTitleBar(const char* label)
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0)); 
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(BORDER));
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::BeginChild(label, ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::PushFont(fontHeader);
+        ImGui::Dummy(ImVec2(1, 3));
+        ImGui::Indent(6);
+        ImGui::Text("%s", label); 
+        ImGui::Unindent();
+        ImGui::Dummy(ImVec2(1, 3));
+        ImGui::PopFont();  
+        ImGui::EndChild();
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar();
+    }
+    
+    void ImageComponent(float width, float height, unsigned int textureID)
+    {
+        std::string uniqueID = "Image Component" + std::to_string(textureID);
+        ImGui::BeginChild(uniqueID.c_str(), ImVec2(width, height), false);
+        ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+        ImGui::GetWindowDrawList()->AddImage(
+            textureID,
+            cursorPos,
+            ImVec2(cursorPos.x + TEXTURE_THUMBNAIL_SIZE, cursorPos.y + TEXTURE_THUMBNAIL_SIZE),
+            ImVec2(0, 1),
+            ImVec2(1, 0)
+        );
+        ImGui::EndChild();
+    }
+
+    // }----------{ MODEL EXPLORER PANEL }----------{
+    void ModelPanelHeader(std::vector<Mesh*> &meshes, std::vector<Model>& models, uint32_t &modelIncrement)
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0)); 
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(BORDER));
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::PushStyleColor(ImGuiCol_Button, HexToRGBA(BUTTON));
+        ImGui::BeginChild("Model Explorer", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::PushFont(fontHeader);
+        ImGui::Dummy(ImVec2(1, 3));
+        ImGui::Indent(6);
+        ImGui::Text("%s", "Model Explorer"); 
+        ImGui::PopFont();  
+        ImGui::SameLine();
+        ImGui::Dummy(ImVec2(SpaceX() - 120.0f - GAP, 0));
+        ImGui::SameLine();
+        if (ImGui::Button("Import OBJ", ImVec2(120.0f, 0)))
+        {   
+            // ADAPTED FROM USER tinyfiledialogs https://stackoverflow.com/questions/6145910/cross-platform-native-open-save-file-dialogs
+            const char *lFilterPatterns[1] = { "*.obj" };
+            const char* selection = tinyfd_openFileDialog("Import OBJ", "C:\\", 1,lFilterPatterns, NULL, 0 );
+            if (selection)
+            {
+                LoadOBJ(selection, meshes, models, modelIncrement);
+            }
+        }
+        ImGui::Unindent();
+        ImGui::Dummy(ImVec2(1, 3));
+        ImGui::EndChild();
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar();
+    }
+
+    void ModelComponent(Model& model, int i)
+    {
+        std::string uniqueID = "Model Element " + std::to_string(i);
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::BeginChild(uniqueID.c_str(), ImVec2(MODEL_THUMBNAIL_SIZE, 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+
+        // BORDER COLOUR
+        ImVec4 borderColour = HexToRGBA(BUTTON);
+        ImVec4 hoverColour = HexToRGBA(BUTTON_HOVER);
+        if (draggedModelIndex == i) {
+            borderColour = HexToRGBA(SELECTED);
+            hoverColour = borderColour;
+        }
+
+        // MODEL THUMBNAIL
+        std::string buttonID = "Model Element Button " + std::to_string(i);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+        ImGui::PushStyleColor(ImGuiCol_Button, borderColour);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hoverColour);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, hoverColour);
+        if (ImGui::ImageButton(
+            buttonID.c_str(), 
+            OBJ_Icon.textureID, 
+            ImVec2(MODEL_THUMBNAIL_SIZE-4, MODEL_THUMBNAIL_SIZE-2)))
+        {
+        
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        {
+            draggedModelIndex = i;
+        }
+        
+        // NAME INPUT
+        std::string nameInputID = "Model Element Name " + std::to_string(i);
+        ImGui::BeginChild(nameInputID.c_str(), ImVec2(MODEL_THUMBNAIL_SIZE, 0), ImGuiChildFlags_AutoResizeY);
+        std::string textInputID = "Model Element Name Input " + std::to_string(i);
+        
+        ImGui::PushItemWidth(MODEL_THUMBNAIL_SIZE);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(BUTTON));
+        ImGui::InputText(textInputID.c_str(), model.tempName, 64);
+        if (ImGui::IsItemDeactivatedAfterEdit())
+        {
+            model.name = model.tempName; 
+        }
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+
+
+        ImGui::SetCursorPosX(cursorPos.x + MODEL_PANEL_GAP);
+        ImGui::PopStyleVar();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+
+    void ModelMaterialComponent(const char* materialName, int i)
+    {
+        std::string uniqueID = "Model Material Element " + std::to_string(i);
+        std::string buttonID = "Model Material Element Button " + std::to_string(i);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(BORDER));
+        ImGui::BeginChild(uniqueID.c_str(), ImVec2(SpaceX(), 0), ImGuiChildFlags_AutoResizeY);
+
+        ImGui::Text("%s", materialName);
+        ImGui::SameLine();
+        ImGui::Dummy(ImVec2(20, 0));
+        ImGui::SameLine();
+
+        if (ImGui::Button(buttonID.c_str(), ImVec2(SpaceX(), 0)))
+        {
+
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+
+    // }----------{ MATERIAL EXPLORER PANEL }----------{
+    void MaterialPanelHeader(std::vector<Material>& materials, ModelManager& modelManager)
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0)); 
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(BORDER));
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::PushStyleColor(ImGuiCol_Button, HexToRGBA(BUTTON));
+        ImGui::BeginChild("Material Explorer", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::PushFont(fontHeader);
+        ImGui::Dummy(ImVec2(1, 3));
+        ImGui::Indent(6);
+        ImGui::Text("%s", "Material Explorer"); 
+        ImGui::PopFont();  
+        ImGui::SameLine();
+        ImGui::Dummy(ImVec2(SpaceX() - 120.0f - GAP, 0));
+        ImGui::SameLine();
+        if (ImGui::Button("Create Material", ImVec2(120.0f, 0)))
+        {   
+            Material newMaterial;
+            materials.push_back(newMaterial);
+            modelManager.AddMaterialToScene(newMaterial.data, pathtraceShader);
+            std::cout << "create material pressed" << std::endl;
+        }
+        ImGui::Unindent();
+        ImGui::Dummy(ImVec2(1, 3));
+        ImGui::EndChild();
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar();
+    }
+
+    void MaterialComponent(Material& material, int i)
+    {
+        std::string uniqueID = "Material Element " + std::to_string(i);
+        std::string buttonID = "Material Element Button " + std::to_string(i);
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::BeginChild(uniqueID.c_str(), ImVec2(MODEL_THUMBNAIL_SIZE, 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+
+        // BORDER COLOUR
+        ImVec4 borderColour = HexToRGBA(BUTTON);
+        ImVec4 hoverColour = HexToRGBA(BUTTON_HOVER);
+        if (selectedMaterialIndex == i) {
+            borderColour = HexToRGBA(SELECTED);
+            hoverColour = borderColour;
+        }
+
+        // MATERIAL THUMBNAIL
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+        ImGui::PushStyleColor(ImGuiCol_Button, borderColour);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hoverColour);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, hoverColour);
+        if (ImGui::ImageButton(
+            buttonID.c_str(), 
+            OBJ_Icon.textureID, 
+            ImVec2(MODEL_THUMBNAIL_SIZE-4, MODEL_THUMBNAIL_SIZE-2)))
+        {
+            selectedMaterialIndex = i;
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+
+        // NAME INPUT
+        std::string nameInputID = "Material Element Name " + std::to_string(i);
+        ImGui::BeginChild(nameInputID.c_str(), ImVec2(MODEL_THUMBNAIL_SIZE, 0), ImGuiChildFlags_AutoResizeY);
+        std::string textInputID = "Material Element Name Input " + std::to_string(i);
+        
+        ImGui::PushItemWidth(MODEL_THUMBNAIL_SIZE);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(BUTTON));
+        ImGui::InputText(textInputID.c_str(), material.tempName, 64);
+        if (ImGui::IsItemDeactivatedAfterEdit())
+        {
+            material.name = material.tempName; 
+        }
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+        // END NAME INPUT
+
+        ImGui::SetCursorPosX(cursorPos.x + MODEL_PANEL_GAP);
+        ImGui::PopStyleVar();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+
+    void MaterialTextureSlot(std::string label, Material& material, std::vector<Texture>& textures, int textureType, bool &updatedMaterial)
+    {   
+        unsigned int textureID = 0;
+        if (textureType == 0) textureID = material.albedoID;
+        if (textureType == 1) textureID = material.normalID;
+        if (textureType == 2) textureID = material.roughnessID;
+
+        std::string uniqueID = std::string("Material Texture Slot") + label;
+        std::string buttonID = std::string("Material Texture Slot Button") + label;
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(ATTRIBUTE_BG));
+        ImGui::BeginChild(uniqueID.c_str(), ImVec2(SpaceX(), 0), ImGuiChildFlags_AutoResizeY);
+
+        // LABEL
+        PaddedText(label.c_str(), 5);
+        
+        ImGui::SameLine();
+        ImGui::Dummy(ImVec2(SpaceX() - MATERIAL_TEXTURE_SLOT_SIZE - MATERIAL_PANEL_GAP, 0));
+        ImGui::SameLine();
+
+        // BORDER COLOUR
+        ImVec4 borderColour = HexToRGBA(BUTTON);
+        ImVec4 hoverColour = HexToRGBA(BUTTON_HOVER);
+
+        // CHECK IF MOUSE IS HOVERING OVER THUMBNAIL
+        ImVec2 mousePos = ImGui::GetMousePos();
+        ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+        bool hoverX = mousePos.x >= cursorPos.x && mousePos.x <= cursorPos.x + MATERIAL_TEXTURE_SLOT_SIZE;
+        bool hoverY = mousePos.y >= cursorPos.y && mousePos.y <= cursorPos.y + MATERIAL_TEXTURE_SLOT_SIZE;
+        bool mouseOverThumbnail = hoverX && hoverY;
+
+        if (draggedTextureIndex != -1 && mouseOverThumbnail)
+        {
+            borderColour = HexToRGBA(SELECTED);
+        }
+
+        // IF DROP DRAGGED TEXTURE INTO SLOT
+        if (mouseOverThumbnail && releasingDraggedTexture)
+        {
+            Texture& texture = textures[draggedTextureIndex];
+            if (textureType == 0) {
+                material.UpdateAlbedo(texture.textureID, texture.textureHandle);
+            }
+            if (textureType == 1) {
+                material.UpdateNormal(texture.textureID, texture.textureHandle);
+            }
+            if (textureType == 2) {
+                material.UpdateRoughness(texture.textureID, texture.textureHandle);
+            }
+            draggedTextureIndex = -1;
+            releasingDraggedTexture = false;
+            droppedTextureIntoSlot = true;
+            textureID = texture.textureID;
+            updatedMaterial = true;
+            std::cout << "dropping texture into slot\n";
+        }
+
+        // MODEL THUMBNAIL
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+        ImGui::PushStyleColor(ImGuiCol_Button, borderColour);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hoverColour);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, hoverColour);
+        if (ImGui::ImageButton(
+            buttonID.c_str(), 
+            textureID, 
+            ImVec2(MATERIAL_TEXTURE_SLOT_SIZE-4, MATERIAL_TEXTURE_SLOT_SIZE-2)))
+        {
+        
+        }
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+
+        ImGui::EndChild();  
+        ImGui::PopStyleColor();
+    }
+
+    // }----------{ TEXTURE PANEL }----------{
+    void TexturePanelHeader(std::vector<Texture> &textures)
+    {
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0)); 
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(BORDER));
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::PushStyleColor(ImGuiCol_Button, HexToRGBA(BUTTON));
+        ImGui::BeginChild("Texture Panel", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::PushFont(fontHeader);
+        ImGui::Dummy(ImVec2(1, 3));
+        ImGui::Indent(6);
+        ImGui::Text("%s", "Texture Panel"); 
+        ImGui::PopFont();  
+        ImGui::SameLine();
+        ImGui::Dummy(ImVec2(SpaceX() - 120.0f - GAP, 0));
+        ImGui::SameLine();
+        if (ImGui::Button("Import Texture", ImVec2(120.0f, 0)))
+        {   
+            // ADAPTED FROM USER tinyfiledialogs https://stackoverflow.com/questions/6145910/cross-platform-native-open-save-file-dialogs
+            const char *lFilterPatterns[2] = { "*.png", "*.jpg" };
+            const char* selection = tinyfd_openFileDialog("Import Image", "C:\\", 2,lFilterPatterns, NULL, 0 );
+            if (selection)
+            {
+                Texture newTexture;
+                newTexture.LoadImage(selection);
+                textures.push_back(newTexture);
+            }
+        }
+        ImGui::Unindent();
+        ImGui::Dummy(ImVec2(1, 3));
+        ImGui::EndChild();
+        ImGui::PopStyleColor(3);
+        ImGui::PopStyleVar();
+    }
+
+    void TextureComponent(Texture &texture, int i)
+    {
+        std::string uniqueID = "Texture Element" + std::to_string(texture.textureID);
+        ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
+        ImGui::BeginChild(uniqueID.c_str(), ImVec2(TEXTURE_THUMBNAIL_SIZE, 0), ImGuiChildFlags_AutoResizeY);
+        
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+        
+
+        // TEXTURE THUMBNAIL
+        ImVec4 borderColour = HexToRGBA(BUTTON);
+        ImVec4 hoverColour = HexToRGBA(BUTTON_HOVER);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
+        ImGui::PushStyleColor(ImGuiCol_Button, borderColour);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hoverColour);
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, hoverColour);
+        std::string imageID = "Texture Image" + std::to_string(texture.textureID);
+        ImGui::SameLine();
+        if (ImGui::ImageButton(
+            imageID.c_str(), 
+            texture.textureID, 
+            ImVec2(TEXTURE_THUMBNAIL_SIZE-4, TEXTURE_THUMBNAIL_SIZE-2)))
+        {
+            
+        }
+
+        if (ImGui::IsItemHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        {
+            draggedTextureIndex = i;
+        }
+
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor(3);
+        
+        // NAME INPUT
+        std::string nameInputID = "Texture Element Name" + std::to_string(texture.textureID);
+        ImGui::BeginChild(nameInputID.c_str(), ImVec2(TEXTURE_THUMBNAIL_SIZE, 0), ImGuiChildFlags_AutoResizeY);
+        std::string textInputID = "Texture Element Name Input" + std::to_string(texture.textureID);
+
+        ImGui::PushItemWidth(TEXTURE_THUMBNAIL_SIZE);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(BUTTON));
+        ImGui::InputText(textInputID.c_str(), texture.tempName, 64);
+        if (ImGui::IsItemDeactivatedAfterEdit())
+        {
+            texture.name = texture.tempName; 
+        }
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+
+
+        ImGui::SetCursorPosX(cursorPos.x + TEXTURE_PANEL_GAP);
+        ImGui::PopStyleVar();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+    }
+};
+
+
+
+
+
+

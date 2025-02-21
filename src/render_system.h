@@ -9,8 +9,9 @@
 #include <iostream>
 
 // PROJECT HEADERS
-#include "luminite_camera.h"
-#include "luminite_quad_renderer.h"
+#include "debug.h"
+#include "camera.h"
+#include "quad_renderer.h"
 
 struct PathVertex
 {
@@ -38,7 +39,7 @@ struct RenderTile
     int height;
     float estimatedTime;
 
-    RenderTile ()
+    RenderTile()
     {
         x = 0;
         y = 0;
@@ -81,26 +82,28 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-        glBindTexture(GL_TEXTURE_2D, 0);
+        glBindTexture(GL_TEXTURE_2D, 1);
+
 
         // CAMERA PATH BUFFER
         uint32_t cameraPathVertexCount = SCA_W * SCA_H * (cameraBounces+1);
         glGenBuffers(1, &cameraPathVertexBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cameraPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * cameraPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, cameraPathVertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, cameraPathVertexBuffer);
 
         // LIGHT PATH BUFFER
         uint32_t lightPathVertexCount = SCA_W * SCA_H * (lightBounces+2);
         glGenBuffers(1, &lightPathVertexBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, lightPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * lightPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, lightPathVertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, lightPathVertexBuffer);
 
-        // RESERVE SPACE FOR GROUP TIMES
+        // RESERVE SPACE FOR GROUP ARRAYS
         uint32_t tilesX = static_cast<uint32_t>((static_cast<float>(SCA_W) + 32) / 32);
         uint32_t tilesY =  static_cast<uint32_t>((static_cast<float>(SCA_H) + 32) / 32);
         groupTimes.reserve(tilesX * tilesY);
+        occupiedColumnHeights.resize(tilesX, 0);
     }
 
     ~RenderSystem()
@@ -134,25 +137,27 @@ public:
         // RESIZE DISPLAY TEXTURE
         glBindTexture(GL_TEXTURE_2D, DisplayTexture);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, SCA_W, SCA_H, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-        glBindTexture(GL_TEXTURE_2D, 0);
+        glBindTexture(GL_TEXTURE_2D, 1);
 
         // RESIZE CAMERA PATH VERTEX BUFFER
         uint32_t cameraPathVertexCount = SCA_W * SCA_H * (cameraBounces+1);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cameraPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * cameraPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, cameraPathVertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, cameraPathVertexBuffer);
 
         // RESIZE LIGHT PATH VERTEX BUFFER
         uint32_t lightPathVertexCount = SCA_W * SCA_H * (lightBounces+2);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, lightPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * lightPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, lightPathVertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, lightPathVertexBuffer);
 
         // RESERVE SPACE FOR GROUP TIMES
         uint32_t tilesX = static_cast<uint32_t>((static_cast<float>(SCA_W) + 32) / 32);
         uint32_t tilesY =  static_cast<uint32_t>((static_cast<float>(SCA_H) + 32) / 32);
         groupTimes.clear();
         groupTimes.reserve(tilesX * tilesY);
+
+        occupiedColumnHeights.resize(tilesX, 0);
 
         // EMPTY TILE QUEUE
         TileQueue.clear();
@@ -162,7 +167,9 @@ public:
 
     void RestartRender()
     {
+        // CLEAR SCHEDULING BUFFERS
         TileQueue.clear();
+        for (int i=0; i<occupiedColumnHeights.size(); i++) occupiedColumnHeights[i] = 0;
         accumulationFrame = 0;
         frameCount = 0;
     }
@@ -227,7 +234,7 @@ public:
             ScheduleRenderTiles(tilesX, tilesY, accumulationFrame);
         }
 
-        while (!TileQueue.empty())
+        if (!TileQueue.empty())
         {
             const RenderTile &tile = TileQueue.front();
 
@@ -258,9 +265,9 @@ public:
             TileQueue.erase(TileQueue.begin());
 
 
-            auto now = std::chrono::high_resolution_clock::now();
-            float totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
-            if (totalDuration + dispatchDuration >= renderBudget) break; // STOP RENDERING AFTER 16 MILLISECONDS
+            // auto now = std::chrono::high_resolution_clock::now();
+            // float totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
+            // if (totalDuration + dispatchDuration >= renderBudget) break; // STOP RENDERING AFTER 16 MILLISECONDS
         }
 
         if (TileQueue.empty()) {
@@ -282,7 +289,7 @@ public:
     uint32_t accumulationFrame = 0;
 private:
 
-    float renderBudget = 15;
+    float renderBudget = 14.5;
     float resolutionScale = 1.0f;
     uint32_t cameraBounces = 3;
     uint32_t lightBounces = 2;
@@ -298,6 +305,7 @@ private:
     std::vector<RenderTile> TileQueue;
 
     std::vector<float> groupTimes;
+    std::vector<uint16_t> occupiedColumnHeights;
 
     // DYNAMIC SCENES
     bool dynamicScene = false;
@@ -316,7 +324,7 @@ private:
         }
         else if (accumulationFrame == 0) // INITIAL TILE WIDTH
         {
-            int tileWidth = 3;
+            int tileWidth = 4;
 
             // CREATE SCHEDULE QUEUE
             int x = 0;
@@ -346,78 +354,27 @@ private:
         }
         else 
         { 
-            int minTileWidth = 4;
+            for (int i=0; i<occupiedColumnHeights.size(); i++) occupiedColumnHeights[i] = 0;
             int x = 0;
             int y = 0;
-            while (y < y_blocks)
+            while (true)
             {
                 // CREATE NEW RENDER TILE
+                std::tuple<int, int> coords = FindAvailableTileSpace(x_blocks, y_blocks);
+                x = std::get<0>(coords);
+                y = std::get<1>(coords);
+                if (x >= x_blocks || y >= y_blocks) break;
+
                 RenderTile tile;
-                tile.x = x;
-                tile.y = y;
-                tile.height = std::min(minTileWidth, y_blocks - tile.y);
+                tile.width = 1;
+                tile.height = 1;
+                tile.x = std::get<0>(coords);
+                tile.y = std::get<1>(coords);
 
-                int numAdditions = 0;
-                float cumulativeTime = 0;
-                while (x < x_blocks && cumulativeTime < renderBudget)
-                {
-                    // CALCULATE TIME FOR NEXT SQUARE
-                    for (int xf=x; xf<std::min(x+minTileWidth, x_blocks); xf++)
-                    {
-                        for (int yf=y; yf<std::min(y+minTileWidth, y_blocks); yf++)
-                        {
-                            cumulativeTime += groupTimes[yf * x_blocks + xf];
-                        }
-                    }
-                    if ((numAdditions > 1 && cumulativeTime < renderBudget) || numAdditions == 0)
-                    {
-                        int widthAddition = std::min(minTileWidth, x_blocks - x);
-                        tile.width += widthAddition;
-                        x += widthAddition;
-                    }
-                }
-
-                std::cout << cumulativeTime << std::endl;
-
-                // ADD RENDER TILE TO QUEUE
+                GrowTile(tile, x_blocks, y_blocks);
                 TileQueue.push_back(tile);
-
-
-                // MOVE TO NEXT ROW
-                if (x >= x_blocks)
-                {
-                    x = 0;
-                    y += tile.height;
-                }
             }
         }
-    }
-    bool isHorizontalSpace(int x, int y, int width, int y_blocks)
-    {
-        if (y >= y_blocks) return false;
-
-        for (int t=0; t<TileQueue.size(); t++)
-        {
-            const RenderTile &tile = TileQueue[t];
-            bool horizontaOverlap = tile.x < x + width && tile.x + tile.width > x;
-            bool verticalOverlap = tile.y < y + 1 && tile.y + tile.height > y;
-            if (horizontaOverlap && verticalOverlap) return false;
-        }
-        return true;
-    }
-
-    bool isVerticalSpace(int x, int y, int height, int x_blocks)
-    {
-        if (x >= x_blocks) return false;
-
-        for (int t=0; t<TileQueue.size(); t++)
-        {
-            const RenderTile &tile = TileQueue[t];
-            bool horizontaOverlap = tile.x < x + 1 && tile.x + tile.width > x;
-            bool verticalOverlap = tile.y < y + height && tile.y + tile.height > y;
-            if (horizontaOverlap && verticalOverlap) return false;
-        }
-        return true;
     }
 
     float GetHorizontalTime(int x, int y, int width, int x_blocks)
@@ -444,37 +401,59 @@ private:
     {
         while (tile.estimatedTime < renderBudget)
         {
-            if (isHorizontalSpace(tile.x, tile.y + tile.height, tile.width, y_blocks))
+            bool hSpace = tile.y + tile.height < y_blocks; 
+            bool vSpace = tile.x + tile.width < x_blocks; 
+
+            if (hSpace)
             {
                 float hTime = GetHorizontalTime(tile.x, tile.y + tile.height, tile.width, x_blocks);
                 if (tile.estimatedTime + hTime < renderBudget) {
                     tile.height += 1;
                     tile.estimatedTime += hTime;
                 }
+                else
+                {
+                    break;
+                }
             }
 
-            if (isVerticalSpace(tile.x + tile.width, tile.y, tile.width, x_blocks))
+            if (vSpace)
             {
                 float vTime = GetVerticalTime(tile.x + tile.width, tile.y, tile.height, x_blocks);
                 if (tile.estimatedTime + vTime < renderBudget) {
                     tile.width += 1;
                     tile.estimatedTime += vTime;
                 }
+                else
+                {
+                    break;
+                }
             }
+
+            if (!hSpace && !vSpace) break;
+        }
+
+        for (int x=tile.x; x<tile.x+tile.width; x++)
+        {
+            occupiedColumnHeights[x] = static_cast<uint16_t>(tile.y + tile.height);
         }
     }
 
     std::tuple<int, int> FindAvailableTileSpace(int x_blocks, int y_blocks)
     {
-        int x = 0;
-        int y = 0;
-        for (int t = 0; t<TileQueue.size(); t++)
+        int x = x_blocks;
+        int y = y_blocks;
+        if (TileQueue.size() == 0) { return std::make_tuple(0, 0); }
+
+        uint16_t minY = y_blocks;
+        for (int col=0; col<x_blocks; col++)
         {
-            const RenderTile &tile = TileQueue[t];
-            int tileBottomMost = tile.y + tile.height;
-            int tileRightMost = tile.x + tile.width;
-            if (tileBottomMost + 1 > y) y = tileBottomMost + 1;
-            if (tileRightMost + 1 > x) x = tileRightMost + 1;
+            if (occupiedColumnHeights[col] < minY)
+            {
+                minY = occupiedColumnHeights[col];
+                x = col;
+                y = static_cast<int>(minY);
+            }
         }
         return std::make_tuple(x, y);
     }

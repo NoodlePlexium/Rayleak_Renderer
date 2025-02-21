@@ -150,35 +150,31 @@ layout(binding = 5) readonly buffer BVHBuffer {
     BVH_Node bvhNodes[];
 };
 
-layout(binding = 6) readonly buffer SceneBVHBuffer {
-    BVH_Node sceneBvhNodes[];
-};
-
-layout(binding = 7) readonly buffer PartitionBuffer {
+layout(binding = 6) readonly buffer PartitionBuffer {
     MeshPartition meshPartitions[];
 };
 
-layout(binding = 8) readonly buffer EmissiveBuffer {
+layout(binding = 7) readonly buffer EmissiveBuffer {
     EmissiveTriangle emissiveTriangles[];
 };
 
-layout(binding = 9) readonly buffer DirectionalLightBuffer {
+layout(binding = 8) readonly buffer DirectionalLightBuffer {
     DirectionalLight directionalLights[];
 };
 
-layout(binding = 10) readonly buffer PointLightBuffer {
+layout(binding = 9) readonly buffer PointLightBuffer {
     PointLight pointLights[];
 };
 
-layout(binding = 11) readonly buffer SpotlightLightBuffer {
+layout(binding = 10) readonly buffer SpotlightLightBuffer {
     Spotlight spotlights[];
 };
 
-layout(binding = 12) buffer CameraPathVertexBuffer {
+layout(binding = 11) buffer CameraPathVertexBuffer {
     PathVertex cameraPathVertices[];
 };
 
-layout(binding = 13) buffer LightPathVertexBuffer {
+layout(binding = 12) buffer LightPathVertexBuffer {
     PathVertex lightPathVertices[];
 };
 
@@ -1209,10 +1205,16 @@ void main()
     // DEPTH OF FIELD
     if (cameraInfo.DOF == 1)
     {
-        vec3 focalpoint = cameraInfo.pos + camRay.dir * cameraInfo.focusDistance;
+        float ratio = dot(cameraInfo.forward, camRay.dir);
+        float inverseRatio = 1 / ratio;
+        vec3 shortCUP = cameraInfo.pos + cameraInfo.forward * ratio;
+        vec3 orthogonal = (camRay.origin + camRay.dir) - shortCUP;
+        vec3 unitFocalPoint = cameraInfo.pos + cameraInfo.forward + orthogonal * inverseRatio;
+        vec3 focalPoint = cameraInfo.pos + cameraInfo.forward * cameraInfo.focusDistance + orthogonal * inverseRatio * cameraInfo.focusDistance;
+
         vec2 randCirclePos = RandomPointInCircle(seed + 82194872) * cameraInfo.aperture;
         camRay.origin += cameraInfo.right * randCirclePos.x + cameraInfo.up * randCirclePos.y;
-        camRay.dir = normalize(focalpoint - camRay.origin);
+        camRay.dir = normalize(focalPoint - camRay.origin);
     }
 
     

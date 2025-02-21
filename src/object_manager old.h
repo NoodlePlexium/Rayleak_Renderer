@@ -8,8 +8,8 @@
 #include <string>
 
 // PROJECT HEADERS
-#include "luminite_mesh.h"
-#include "luminite_light.h"
+#include "mesh.h"
+#include "light.h"
 
 
 struct EmissiveTriangle
@@ -36,10 +36,6 @@ public:
 
     void CopyMeshDataToGPU(std::vector<Mesh*> &meshes, const std::vector<Material> &materials, const unsigned int &pathtraceShader)
     {   
-        // BUILD SCENE BVH
-        // BuildSceneBVH(meshes);
-
-
         // CREATE BUFFER OF MESH PARTITIONS
         std::vector<MeshPartition> meshPartitions;
         uint32_t vertexStart = 0;
@@ -130,23 +126,17 @@ public:
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, bvhBuffer);
         void* mappedBVHBuffer = glMapBufferRange(GL_SHADER_STORAGE_BUFFER, 0, bvhBufferSize, GL_MAP_WRITE_BIT);
        
-        // SCENE BVH BUFFER
-        glGenBuffers(1, &sceneBvhBuffer);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, sceneBvhBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, nodesUsed * sizeof(BVH_Node), sceneBvhNodes, GL_STATIC_READ);  
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, sceneBvhBuffer);
-        
         // PARTITION BUFFER
         glGenBuffers(1, &partitionBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, partitionBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(MeshPartition) * meshPartitions.size(), meshPartitions.data(), GL_STATIC_READ);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, partitionBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, partitionBuffer);
 
         // EMISSION INDEX BUFFER
         glGenBuffers(1, &emissiveBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, emissiveBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(EmissiveTriangle) * emissiveTriangleCount, emissiveTriangleBuffer.data(), GL_STATIC_READ);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, emissiveBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, emissiveBuffer);
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_emissiveTriangleCount"), emissiveTriangleCount);
 
         // COPY VERTEX INDEX AND MATERIAL DATA TO THE GPU
@@ -198,21 +188,21 @@ public:
         glGenBuffers(1, &directionalLightBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, directionalLightBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(DirectionalLight) * directionalLights.size(), directionalLights.data(), GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, directionalLightBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 8, directionalLightBuffer);
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_directionalLightCount"), directionalLights.size());
 
         // POINT LIGHTS
         glGenBuffers(1, &pointLightBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, pointLightBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PointLight) * pointLights.size(), pointLights.data(), GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, pointLightBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 9, pointLightBuffer);
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_pointLightCount"), pointLights.size());
 
         // SPOTLIGHTS
         glGenBuffers(1, &spotlightBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, spotlightBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(Spotlight) * spotlights.size(), spotlights.data(), GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, spotlightBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, spotlightBuffer);
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_spotlightCount"), spotlights.size());
     }
 
@@ -230,87 +220,6 @@ public:
     }
 private:
 
-    void BuildSceneBVH(std::vector<Mesh*> &meshes)
-    {
-        sceneBvhNodes = new BVH_Node[meshes.size()];
-        BVH_Node& root = sceneBvhNodes[0];
-        root.indexCount = meshes.size();
-        UpdateNodeBounds(0, meshes);
-        SubdivideNode(0, 0, meshes);
-
-        // RESIZE bvhNodes TO DISCARD UNUSED NODES
-        BVH_Node* resizedNodes = new BVH_Node[nodesUsed];  
-        std::memcpy(resizedNodes, sceneBvhNodes, nodesUsed * sizeof(BVH_Node));
-        delete[] sceneBvhNodes;
-        sceneBvhNodes = resizedNodes;
-    }
-
-    void UpdateNodeBounds(uint32_t nodeIndex, std::vector<Mesh*> &meshes)
-    {
-        BVH_Node& node = sceneBvhNodes[nodeIndex];
-        node.aabbMin = glm::vec3(1e30f);
-        node.aabbMax = glm::vec3(-1e30f);
-        for (uint32_t i=0; i<node.indexCount; ++i)
-        {
-            node.aabbMin = glm::min(node.aabbMin, meshes[node.firstIndex + i]->aabbMin);
-            node.aabbMax = glm::max(node.aabbMax, meshes[node.firstIndex + i]->aabbMax);
-        }
-    }
-
-    void SubdivideNode(uint32_t nodeIndex, uint16_t recurse, std::vector<Mesh*> &meshes)
-    {
-        BVH_Node& node = sceneBvhNodes[nodeIndex];
-        if (node.indexCount == 1 || recurse > 16) return;
-
-        glm::vec3 nodeBoxDimensions = node.aabbMax - node.aabbMin;
-        uint32_t axis = 0;
-        if (nodeBoxDimensions.y > nodeBoxDimensions.x) axis = 1;
-        if (nodeBoxDimensions.z > nodeBoxDimensions[axis]) axis = 2;
-        float splitPos = (node.aabbMax.x + node.aabbMin.x) * 0.5f;
-
-        // ARRANGE INDICES ABOUT THE SPLIT POS
-        int i = node.firstIndex;
-        int j = i + node.indexCount - 1;
-        while (i <= j)
-        {
-            glm::vec3 centroid = (meshes[i]->aabbMax + meshes[i]->aabbMin) * 0.5f;
-
-            if (centroid[axis] < splitPos) i++;
-            else
-            {
-                std::swap(meshes[i], meshes[j]);
-                j--;
-            }
-        }
-
-        // IF A SPLIT HAS NO VERTICES
-        uint32_t leftIndexCount = i - node.firstIndex;
-        if (leftIndexCount == 0 || leftIndexCount == node.indexCount){
-            return;
-        }
-
-        // SEY NODE ATTRIBUTES
-        uint32_t leftChildIndex = nodesUsed++;
-        uint32_t rightChildIndex = nodesUsed++;
-        sceneBvhNodes[leftChildIndex].firstIndex = node.firstIndex;
-        sceneBvhNodes[leftChildIndex].indexCount = leftIndexCount;
-        sceneBvhNodes[rightChildIndex].firstIndex = i; 
-        sceneBvhNodes[rightChildIndex].indexCount = node.indexCount - leftIndexCount; 
-        node.leftChild = leftChildIndex;
-        node.rightChild = rightChildIndex;
-        node.indexCount = 0;
-
-        // RECURSIVE CALL FOT LEFT AND RIGHT SUB NODES
-        UpdateNodeBounds(leftChildIndex, meshes);
-        UpdateNodeBounds(rightChildIndex, meshes);
-        SubdivideNode(leftChildIndex, recurse+1, meshes);
-        SubdivideNode(rightChildIndex, recurse+1, meshes);
-    }
-
-    BVH_Node* sceneBvhNodes;
-    uint32_t nodesUsed;
-
-    unsigned int sceneBvhBuffer;
     unsigned int vertexBuffer;
     unsigned int indexBuffer;
     unsigned int materialBuffer;

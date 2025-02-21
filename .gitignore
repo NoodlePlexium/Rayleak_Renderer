@@ -4,5 +4,9 @@
 /src/glm/*
 /textures/*
 /models/*
+/fonts/*
+/models/icons/*
 /build/models/*
 /build/textures/*
+/build/icons/*
+/build/fonts/*

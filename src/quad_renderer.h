@@ -1,7 +1,7 @@
 #pragma once
 #include <GL/glew.h>
 #include <string>
-#include "luminite_shader.h"
+#include "shader.h"
 
 class QuadRenderer
 {

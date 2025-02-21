@@ -14,29 +14,34 @@
 #include <random>
 
 // PROJECT HEADERS
-#include "luminite_render_system.h"
-#include "luminite_shader.h"
-#include "luminite_mesh.h"
-#include "luminite_light.h"
-#include "luminite_debug.h"
-#include "luminite_ui.h"
-#include "luminite_object_manager.h"
-#include "luminite_camera.h"
+#include "render_system.h"
+#include "shader.h"
+#include "mesh.h"
+#include "light.h"
+#include "debug.h"
+#include "user_interface.h"
+#include "object_manager.h"
+#include "camera.h"
+#include "material.h"
 
 int main()
 {
     float WIDTH = 1280;
     float HEIGHT = 720;
-    int VIEWPORT_WIDTH = static_cast<int>(WIDTH - 250.0f);
-    int VIEWPORT_HEIGHT = static_cast<int>(HEIGHT - 250.0f);
+    float BOTTOM_PANEL_HEIGHT = 400;
+    int VIEWPORT_WIDTH = static_cast<int>(WIDTH - BOTTOM_PANEL_HEIGHT);
+    int VIEWPORT_HEIGHT = static_cast<int>(HEIGHT - BOTTOM_PANEL_HEIGHT);
     float frameTime = 0.0f;
 
-
-    // CAMERA SETTINGS
 
 
     double lastMouseX = 0.0f;
     double lastMouseY = 0.0f;
+    bool viewportSelected = false;
+    bool leftMouseHeld = false;
+    bool rightMouseHeld = false;
+    bool leftMouseDown = false;
+    bool rightMouseDown = false;
 
     // SETUP A GLFW WINDOW
     if (!glfwInit()) exit(EXIT_FAILURE);
@@ -70,21 +75,25 @@ int main()
     glViewport(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
     
     // PATH TRACING COMPUTE SHADER
-    std::string pathtraceShaderSource = LoadShaderFromFile("./shaders/bidirectional.shader");
+    std::string pathtraceShaderSource = LoadShaderFromFile("./shaders/pathtrace.shader");
     unsigned int pathtraceShader = CreateComputeShader(pathtraceShaderSource);
 
-
-    
     // CREATE CAMERA
     Camera camera(pathtraceShader);
 
-
+    // CREATE RENDER SYSTEM
     RenderSystem renderSystem(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+
+    // CREATE USER INTERFACE OBJECT
+    UserInterface UI(pathtraceShader);
 
 
     // }----------{ LOAD 3D MESHES }----------{
+    uint32_t modelIncrement = 0;
+    std::vector<Model> models;
     std::vector<Mesh*> meshes;
     std::vector<Material> materials;
+    std::vector<Texture> textures;
 
     Material stoneMat;
     stoneMat.LoadAlbedo("textures/stone_colour.jpg");
@@ -100,20 +109,21 @@ int main()
     curtainMat.LoadAlbedo("textures/fabric_colour.jpg");
     curtainMat.LoadNormal("textures/fabric_normal.jpg");
     curtainMat.LoadRoughness("textures/fabric_roughness.jpg");
-    curtainMat.colour = glm::vec3(0.91f, 0.357f, 0.337f);
+    curtainMat.data.colour = glm::vec3(0.91f, 0.357f, 0.337f);
 
     Material bannerMat;
     bannerMat.LoadAlbedo("textures/fabric_colour.jpg");
     bannerMat.LoadNormal("textures/fabric_normal.jpg");
     bannerMat.LoadRoughness("textures/fabric_roughness.jpg");
-    bannerMat.colour = glm::vec3(0.224f, 0.302f, 0.502f);
+    bannerMat.data.colour = glm::vec3(0.224f, 0.302f, 0.502f);
 
     materials.push_back(stoneMat);
     materials.push_back(roofMat);
     materials.push_back(curtainMat);
     materials.push_back(bannerMat);
 
-    LoadOBJ("./models/sponza_simple.obj", meshes);
+    LoadOBJ("./models/vw.obj", meshes, models, modelIncrement);
+    LoadOBJ("./models/lion.obj", meshes, models, modelIncrement);
 
     // APPLY STONE TO EVERYTHING
     for (int i=0; i<meshes.size(); i++)
@@ -137,8 +147,13 @@ int main()
 
 
     // }----------{ SEND MESH DATA TO THE GPU }----------{
-    ModelManager modelManager;
-    modelManager.CopyMeshDataToGPU(meshes, materials, pathtraceShader);
+    ModelManager modelManager(pathtraceShader);
+    modelManager.AddModelToScene(models[0], pathtraceShader);
+    // modelManager.AddModelToScene(models[1], pathtraceShader);
+    modelManager.AddMaterialToScene(materials[0].data, pathtraceShader);
+    modelManager.AddMaterialToScene(materials[1].data, pathtraceShader);
+    modelManager.AddMaterialToScene(materials[2].data, pathtraceShader);
+    modelManager.AddMaterialToScene(materials[3].data, pathtraceShader);
     // }----------{ SEND MESH DATA TO THE GPU }----------{
 
 
@@ -146,7 +161,7 @@ int main()
     DirectionalLight sun;
     sun.brightness = 2.5f;
     std::vector<DirectionalLight> directionalLights;
-    // directionalLights.push_back(sun);
+    directionalLights.push_back(sun);
 
 
 
@@ -214,8 +229,7 @@ int main()
     // }----------{ SEND LIGHT DATA TO THE GPU }----------{
 
 
-    ImFont* fontBody = LoadFont("fonts/Inter/Inter-VariableFont_opsz,wght.ttf", 18);
-    ImFont* fontHeader = LoadFont("fonts/Inter/Inter-VariableFont_opsz,wght.ttf", 24);
+
 
     // }----------{ APPLICATION LOOP }----------{
     while (!glfwWindowShouldClose(window))
@@ -234,8 +248,8 @@ int main()
         {
             HEIGHT = newHEIGHT;
             WIDTH = newWIDTH;
-            VIEWPORT_WIDTH = static_cast<int>(WIDTH - 250.0f);
-            VIEWPORT_HEIGHT = static_cast<int>(HEIGHT - 250.0f);
+            VIEWPORT_WIDTH = static_cast<int>(WIDTH - BOTTOM_PANEL_HEIGHT);
+            VIEWPORT_HEIGHT = static_cast<int>(HEIGHT - BOTTOM_PANEL_HEIGHT);
 
             // RESIZE FRAME BUFFER, OPENGL VIEWPORT
             renderSystem.ResizeFramebuffer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
@@ -243,10 +257,9 @@ int main()
         }
         // }----------{ HANDLE WINDOW RESIZING }----------{
 
-
-        UpdateUI();
-        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        UI.NewFrame();
+        glClearColor(0, 0, 0, 1);
+        glClear(GL_COLOR_BUFFER_BIT);
 
 
         renderSystem.SetRendererStatic();
@@ -259,54 +272,92 @@ int main()
         lastMouseX = mouseX;
         lastMouseY = mouseY;
 
-        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-            camera.rotation.y += dx * 0.55f;
-            camera.rotation.x += dy * 0.55f;
-            camera.rotation.x = std::max(-89.0f, std::min(89.0f, camera.rotation.x));   
-            renderSystem.SetRendererDynamic();
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
+        {
+            if (!leftMouseHeld) leftMouseDown = true;
+            else leftMouseDown = false;
+            leftMouseHeld = true;
+        }
+        else
+        {
+            leftMouseHeld = false;
+            leftMouseDown = false;
         }
 
-        glm::vec3 moveDir = glm::vec3(0.0f, 0.0f, 0.0f);
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS)
         {
-            moveDir += camera.forward * 1.0f;
+            if (!rightMouseHeld) rightMouseDown = true;
+            else rightMouseDown = false;
+            rightMouseHeld = true;
         }
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+        else
         {
-            moveDir += camera.right * -1.0f;
+            rightMouseHeld = false;
+            rightMouseDown = false;
         }
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+
+        bool xInVP = mouseX >= 5 && mouseX <= 5 + VIEWPORT_WIDTH;
+        bool yInVP = mouseY >= 5 && mouseY <= 5 + VIEWPORT_HEIGHT;
+        bool cursorOverViewport = xInVP && yInVP;
+
+        if (leftMouseDown ||
+            rightMouseDown)
         {
-            moveDir += camera.forward * -1.0f;
+            viewportSelected = cursorOverViewport;
         }
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        {
-            moveDir += camera.right * 1.0f;
+
+        // DESELECT FOCUSED IMGUI ELEMENT ON RIGHT CLICK
+        if (ImGui::IsAnyItemActive() && rightMouseDown) {
+            ImGui::SetKeyboardFocusHere(-1);
         }
-         if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+
+
+        if (viewportSelected)
         {
-            moveDir += glm::vec3(0.0f, 1.0f, 0.0f);
-        }
-        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
-        {
-            moveDir += glm::vec3(0.0f, -1.0f, 0.0f);
-        }  
-        if (glm::length(moveDir) != 0.0f)
-        {
-            camera.pos += glm::normalize(moveDir) * frameTime * 3.0f;
-            renderSystem.SetRendererDynamic();
+            if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+                camera.rotation.y += dx * 0.55f;
+                camera.rotation.x += dy * 0.55f;
+                camera.rotation.x = std::max(-89.0f, std::min(89.0f, camera.rotation.x));   
+                renderSystem.SetRendererDynamic();
+            }
+
+            glm::vec3 moveDir = glm::vec3(0, 0, 0);
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            {
+                moveDir += camera.forward * 1.0f;
+            }
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
+            {
+                moveDir += camera.right * -1.0f;
+            }
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            {
+                moveDir += camera.forward * -1.0f;
+            }
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+            {
+                moveDir += camera.right * 1.0f;
+            }
+             if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS)
+            {
+                moveDir += glm::vec3(0, 1, 0);
+            }
+            if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS)
+            {
+                moveDir += glm::vec3(0, -1, 0);
+            }  
+            if (glm::length(moveDir) != 0.0f)
+            {
+                camera.pos += glm::normalize(moveDir) * frameTime * 3.0f;
+                renderSystem.SetRendererDynamic();
+            }
         }
         // }----------{ VIEWPORT CONTROLS }----------{
 
 
 
-
-
         // }----------{ INVOKE PATH TRACER }----------{
-        renderSystem.PathtraceFrame(
-            pathtraceShader,  
-            camera
-        );
+        renderSystem.PathtraceFrame(pathtraceShader, camera);
         // }----------{ PATH TRACER ENDS }----------{
 
 
@@ -318,112 +369,24 @@ int main()
 
 
         // }----------{ APP LAYOUT }----------{
-        ImGui::PushFont(fontBody);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(5, 5));
-        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImGui::GetMainViewport()->Size, ImGuiCond_Always);
-        ImGui::SetNextWindowBgAlpha(0.0f);
-        ImGui::Begin(
-            "App Layout", nullptr, 
-            ImGuiWindowFlags_NoResize | 
-            ImGuiWindowFlags_NoMove | 
-            ImGuiWindowFlags_NoTitleBar | 
-            ImGuiWindowFlags_NoCollapse
-        );
-        
-
-        // }----------{ VIEWPORT WINDOW   }----------{
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::BeginChild("Viewport", ImVec2(VIEWPORT_WIDTH, VIEWPORT_HEIGHT), true);
-        ImVec2 cursorPos = ImGui::GetCursorScreenPos();
-        ImGui::GetWindowDrawList()->AddImage(
-            (ImTextureID)(intptr_t)renderSystem.GetFrameBufferTextureID(),
-            cursorPos,
-            ImVec2(cursorPos.x + VIEWPORT_WIDTH, cursorPos.y + VIEWPORT_HEIGHT),
-            ImVec2(0, 1),
-            ImVec2(1, 0)
-        );
-        int frameRate = int((1.0f / frameTime) + 0.5f);
-        std::string frameTimeString = std::to_string(frameTime * 1000) + "ms";
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 128, 255));
-        ImGui::Text("%s", frameTimeString.c_str());
-        ImGui::PopStyleColor();
-
-
-        
-        // Settings Menu
-        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 20.0f);
-        ImGui::BeginChild("Settings Panel", ImVec2(240.0f, 0), false);
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-        if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
-
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 3));
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.1f));
-            ImGui::BeginChild("Settings", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
-
-            PaddedText("Camera Settings", 5.0f);
-            FloatAttribute("Field of View", "FOV", "", 5.0f, 5.0f, &camera.fov);
-            CheckboxAttribute("Depth of Field", "DOF", 5.0f, 5.0f, &camera.dof);
-            FloatAttribute("Focus Distance", "FOCUS", "m", 5.0f, 5.0f, &camera.focus_distance);
-            FloatAttribute("fStops", "fStops", "", 5.0f, 5.0f, &camera.fStop);
-            CheckboxAttribute("Anti Aliasing", "AA", 5.0f, 5.0f, &camera.anti_aliasing);
-            FloatAttribute("Exposure", "EXPOSURE", "", 5.0f, 5.0f, &camera.exposure);
-            
-            if (camera.SettingsChanged())
-            {
-                renderSystem.RestartRender();
-            }
-
-            ImGui::EndChild();
-            ImGui::PopStyleVar();
-            ImGui::PopStyleColor();
-        }
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor();
-        ImGui::EndChild();
-        // Settings Menu
-
-
-
-        
-        ImGui::EndChild();
-        ImGui::PopStyleVar();
-        // }----------{ VIEWPORT WINDOW   }----------{
-        
-
-        // }----------{ OBJECTS PANEL     }----------{
-        RenderObjectsPanel(meshes, VIEWPORT_HEIGHT, fontHeader);
-        // }----------{ OBJECTS PANEL     }----------{
-
-
-        // }----------{ MODEL EXPLORER    }----------{
-        RenderModelExplorer(fontHeader);
-        // }----------{ MODEL EXPLORER    }----------{
-
-
-        // }----------{ MATERIAL EXPLORER }----------{
-        RenderMaterialExplorer(fontHeader);
-        // }----------{ MATERIAL EXPLORER }----------{
-
-
-        // }----------{ TEXTURE PANEL     }----------{
-        RenderTexturesPanel(fontHeader);
-        // }----------{ TEXTURE PANEL     }----------{
-
-
-        ImGui::End();
-        ImGui::PopFont();
-        ImGui::PopStyleVar();
-        ImGui::PopStyleVar();
-        ImGui::PopStyleVar();
+        UI.BeginAppLayout(cursorOverViewport);
+        UI.RenderViewportPanel(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, frameTime, cursorOverViewport, renderSystem.GetFrameBufferTextureID(), camera, modelManager, models);
+        UI.RenderObjectsPanel(meshes, VIEWPORT_HEIGHT);
+        ImGui::Dummy(ImVec2(1, 0));
+        UI.RenderModelExplorer(meshes, models, modelIncrement);
+        UI.RenderMaterialExplorer(materials, textures, modelManager);
+        UI.RenderTexturesPanel(textures);
+        UI.EndAppLayout();
         // }----------{ APP LAYOUT ENDS   }----------{
 
 
-        RenderUI();
+        UI.RenderUI();
         glfwSwapBuffers(window);
+
+        if (UI.restartRender)
+        {
+            renderSystem.RestartRender();
+        }
 
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::duration<float>>(end - start);
