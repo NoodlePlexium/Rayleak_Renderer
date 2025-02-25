@@ -12,21 +12,21 @@
 #include <functional>
 #include <string>
 #include <string.h>
+#include <array>
 
 // PROJECT HEADERS
 #include "utils.h"
 
 struct Texture
 {
-    char* name;
-    char* tempName;
+    char name[32];
+    char tempName[32];
     uint64_t textureHandle;
     unsigned int textureID;
 
-    Texture() 
+    void CleanUp() 
     {
-        name = new char[32];
-        tempName = new char[32];
+        if (textureID) glDeleteTextures(1, &textureID);
     }
 
     void LoadImage(const std::string filepath)
@@ -39,8 +39,9 @@ struct Texture
             return;
         }
 
-        strcpy_s(name, 32, ExtractName(filepath).substr(0, 32).c_str());
-        strcpy_s(tempName, 32, name);
+        std::string filename = ExtractName(filepath).substr(0, 32);
+        strcpy_s(name, 32, filename.c_str());
+        strcpy_s(tempName, 32, filename.c_str());
 
         glGenTextures(1, &textureID);
         glBindTexture(GL_TEXTURE_2D, textureID);
@@ -55,6 +56,7 @@ struct Texture
         textureHandle = glGetTextureHandleARB(textureID);
     }
 };
+
 
 struct MaterialData
 {
@@ -80,8 +82,8 @@ struct MaterialData
         roughnessHandle = -1;
         textureFlags    = 0;
     }
-
 };
+
 
 struct Material
 {
@@ -89,16 +91,22 @@ struct Material
     unsigned int albedoID;
     unsigned int normalID;
     unsigned int roughnessID;
-    char* name;
-    char* tempName;
+    char name[32];
+    char tempName[32];
 
     Material()
     {
-        name = new char[32];
-        tempName = new char[32];
         strcpy_s(name, 32, "material");
         strcpy_s(tempName, 32, "material");
     }
+        
+    void CleanUp()
+    {
+        if (albedoID) glDeleteTextures(1, &albedoID);
+        if (normalID) glDeleteTextures(1, &normalID);
+        if (roughnessID) glDeleteTextures(1, &roughnessID);
+    }
+
 
     void LoadAlbedo(std::string filepath)
     {
@@ -200,6 +208,7 @@ struct Material
 
         albedoID = newTextureID;
         data.albedoHandle = newTextureHandle;
+        data.textureFlags |= (1 << 0);
         glMakeTextureHandleResidentARB(data.albedoHandle);
     }
 
@@ -214,6 +223,7 @@ struct Material
 
         normalID = newTextureID;
         data.normalHandle = newTextureHandle;
+        data.textureFlags |= (1 << 1);
         glMakeTextureHandleResidentARB(data.normalHandle);
     }
     
@@ -228,6 +238,7 @@ struct Material
 
         roughnessID = newTextureID;
         data.roughnessHandle = newTextureHandle;
+        data.textureFlags |= (1 << 2);
         glMakeTextureHandleResidentARB(data.roughnessHandle);
     }
 };

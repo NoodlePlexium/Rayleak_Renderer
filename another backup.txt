@@ -90,7 +90,6 @@ public:
         if (draggedTextureIndex != -1)
         {
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-            
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
             {
                 std::cout << "Releasing dragged texture" << std::endl;
@@ -117,7 +116,15 @@ public:
         ImGui::PopStyleColor();
     }
 
-    void RenderViewportPanel(int width, int height, float frameTime, bool cursorOverViewport, unsigned int frameBufferTextureID, Camera& camera, ModelManager& modelManager, std::vector<Model>& models, std::vector<Mesh*>& meshes, RenderSystem& renderSystem, const unsigned int &raycastShader)
+    void RenderViewportPanel(
+        int width, int height, 
+        float frameTime, bool 
+        cursorOverViewport, 
+        unsigned int frameBufferTextureID, 
+        Camera& camera, 
+        ModelManager& modelManager, 
+        std::vector<Model>& models
+    )
     {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::BeginChild("Viewport", ImVec2(width, height), true);
@@ -140,7 +147,7 @@ public:
             if (cursorOverViewport)
             {
                 std::cout << "Model dragged into scene" << std::endl;
-                modelManager.AddModelToScene(models[draggedModelIndex]);
+                modelManager.AddModelToScene(models[draggedModelIndex], pathtraceShader);
                 restartRender = true;
             }
             else
@@ -157,19 +164,16 @@ public:
             if (cursorOverViewport)
             {
                 ImVec2 mousePos = ImGui::GetMousePos();
-        
-                int y = height - mousePos.y + 3;
-                int meshIndex = renderSystem.Raycast(raycastShader, camera, meshes.size(), (int)mousePos.x, y);
-                if (meshIndex >= 0 && meshIndex < meshes.size())
-                {
-                    modelManager.UpdateMeshMaterial(meshes[meshIndex], static_cast<uint32_t>(meshIndex), static_cast<uint32_t>(draggedMaterialIndex));
-                    restartRender = true;
-                }
+                // int meshIndex = renderSystem.Raycast(raycastShader, camera, (int)mousePos.x, (int) mousePos.y);
+                // if (meshIndex != 1)
+                // {
+                //     modelManager.UpdateMeshMaterial(meshes[meshIndex], static_cast<uint32_t>(meshIndex), static_cast<uint32_t>(draggedMaterialIndex));
+                //     std::cout << "changed mesh's material \n";
+                // }
             }
             releasingDraggedMaterial = false;
             draggedMaterialIndex = -1;
         }
-
 
         RenderSettingsPanel(camera);
         ImGui::EndChild();
@@ -245,13 +249,13 @@ public:
         ImGui::PopStyleVar(2);
     }
 
-    void RenderModelExplorer(std::vector<Mesh*> &meshes, std::vector<Model>& models)
+    void RenderModelExplorer(std::vector<Mesh*> &meshes, std::vector<Model>& models, uint32_t &meshIncrement)
     {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0)); 
         ImGui::BeginChild("Model Explorer", ImVec2(SpaceX() * 0.333f, SpaceY()), true);
-        ModelPanelHeader(meshes, models);
+        ModelPanelHeader(meshes, models, meshIncrement);
 
         float materialContainerWidth = 0;
 
@@ -280,6 +284,31 @@ public:
         ImGui::EndChild();
         ImGui::PopStyleVar();
     
+
+        // // MATERIAL CONTAINER GRID
+        // ImGui::SameLine();
+        // ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GAP, GAP));
+        // ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA("#121212"));
+        // ImGui::BeginChild("Model Material Container", ImVec2(SpaceX(), SpaceY()), false);
+        // ImGui::Dummy(ImVec2(1, 0));
+
+        // // MODEL CONTAINER GRID
+        // int id = 0;
+        // for (int i=0; i<models.size(); i++)
+        // {
+        //     for (int j=0; j<models[i].materialNames.size(); j++)
+        //     {
+        //         ModelMaterialComponent(models[i].materialNames[j].c_str(), id++);
+        //         std::cout << models[i].materialNames[j].c_str() << std::endl;
+        //     }
+        // }
+
+        // ImGui::Dummy(ImVec2(1, 0));
+        // ImGui::EndChild();
+        // ImGui::PopStyleVar();
+        // ImGui::PopStyleColor();
+        // // MATERIAL CONTAINER GRID
+
 
         ImGui::EndChild();
         ImGui::PopStyleColor();
@@ -336,7 +365,7 @@ public:
             bool updatedMaterial = false;
             MaterialData& materialData = materials[selectedMaterialIndex].data;
             std::string baseID = std::to_string(selectedMaterialIndex).c_str();
-            // PaddedText(materials[selectedMaterialIndex].name, 5);
+            PaddedText(materials[selectedMaterialIndex].name, 5);
             float col[3];
             col[0] = materialData.colour.x;
             col[1] = materialData.colour.y;
@@ -582,7 +611,7 @@ private:
     }
 
     // }----------{ MODEL EXPLORER PANEL }----------{
-    void ModelPanelHeader(std::vector<Mesh*> &meshes, std::vector<Model>& models)
+    void ModelPanelHeader(std::vector<Mesh*> &meshes, std::vector<Model>& models, uint32_t &modelIncrement)
     {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0)); 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(BORDER));
@@ -604,7 +633,7 @@ private:
             const char* selection = tinyfd_openFileDialog("Import OBJ", "C:\\", 1,lFilterPatterns, NULL, 0 );
             if (selection)
             {
-                LoadOBJ(selection, meshes, models);
+                LoadOBJ(selection, meshes, models, modelIncrement);
             }
         }
         ImGui::Unindent();
@@ -658,10 +687,10 @@ private:
         
         ImGui::PushItemWidth(MODEL_THUMBNAIL_SIZE);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(BUTTON));
-        ImGui::InputText(textInputID.c_str(), model.tempName, 32);
+        ImGui::InputText(textInputID.c_str(), model.tempName, 64);
         if (ImGui::IsItemDeactivatedAfterEdit())
         {
-            strcpy_s(model.name, 32, model.tempName);
+            model.name = model.tempName; 
         }
         ImGui::PopStyleColor();
         ImGui::EndChild();
@@ -714,7 +743,7 @@ private:
         {   
             Material newMaterial;
             materials.push_back(newMaterial);
-            modelManager.AddMaterialToScene(newMaterial.data);
+            modelManager.AddMaterialToScene(newMaterial.data, pathtraceShader);
             std::cout << "create material pressed" << std::endl;
         }
         ImGui::Unindent();
@@ -761,6 +790,8 @@ private:
             draggedMaterialIndex = i;
         }
 
+
+
         // NAME INPUT
         std::string nameInputID = "Material Element Name " + std::to_string(i);
         ImGui::BeginChild(nameInputID.c_str(), ImVec2(MODEL_THUMBNAIL_SIZE, 0), ImGuiChildFlags_AutoResizeY);
@@ -768,10 +799,10 @@ private:
         
         ImGui::PushItemWidth(MODEL_THUMBNAIL_SIZE);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(BUTTON));
-        ImGui::InputText(textInputID.c_str(), material.tempName, 32);
+        ImGui::InputText(textInputID.c_str(), material.tempName, 64);
         if (ImGui::IsItemDeactivatedAfterEdit())
         {
-            strcpy_s(material.name, 32, material.tempName);
+            material.name = material.tempName; 
         }
         ImGui::PopStyleColor();
         ImGui::EndChild();
@@ -935,10 +966,10 @@ private:
 
         ImGui::PushItemWidth(TEXTURE_THUMBNAIL_SIZE);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(BUTTON));
-        ImGui::InputText(textInputID.c_str(), texture.tempName, 32);
+        ImGui::InputText(textInputID.c_str(), texture.tempName, 64);
         if (ImGui::IsItemDeactivatedAfterEdit())
         {
-            strcpy_s(texture.name, 32, texture.tempName);
+            texture.name = texture.tempName; 
         }
         ImGui::PopStyleColor();
         ImGui::EndChild();

@@ -36,6 +36,33 @@ public:
         glUniform1ui(cameraInfoAntiAliasingLocation, anti_aliasing);
         glUniform1f(cameraInfoExposureLocation, exposure);
     }
+
+    void UpdateRaycasterUniforms(unsigned int shader)
+    {
+        unsigned int camInfoPosLocation_raycast = glGetUniformLocation(shader, "cameraInfo.pos");
+        unsigned int camInfoForwardLocation_raycast = glGetUniformLocation(shader, "cameraInfo.forward");
+        unsigned int camInfoRightLocation_raycast = glGetUniformLocation(shader, "cameraInfo.right");
+        unsigned int camInfoUpLocation_raycast= glGetUniformLocation(shader, "cameraInfo.up");
+        unsigned int camInfoFOVLocation_raycast = glGetUniformLocation(shader, "cameraInfo.FOV");
+        unsigned int cameraInfoDOFLocation_raycast = glGetUniformLocation(shader, "cameraInfo.DOF");
+        unsigned int cameraInfoFocusDistanceLocation_raycast = glGetUniformLocation(shader, "cameraInfo.focusDistance");
+        unsigned int cameraInfoApertureLocation_raycast = glGetUniformLocation(shader, "cameraInfo.aperture");
+        unsigned int cameraInfoAntiAliasingLocation_raycast = glGetUniformLocation(shader, "cameraInfo.antiAliasing");
+        unsigned int cameraInfoExposureLocation_raycast = glGetUniformLocation(shader, "cameraInfo.exposure");
+
+        UpdateCameraVectors();
+        glUniform3f(camInfoPosLocation_raycast, pos.x, pos.y, pos.z);
+        glUniform3f(camInfoForwardLocation_raycast, forward.x, forward.y, forward.z);
+        glUniform3f(camInfoRightLocation_raycast, right.x, right.y, right.z);
+        glUniform3f(camInfoUpLocation_raycast, up.x, up.y, up.z);
+        glUniform1f(camInfoFOVLocation_raycast, fov);
+        glUniform1ui(cameraInfoDOFLocation_raycast, dof? 1 : 0);
+        glUniform1f(cameraInfoFocusDistanceLocation_raycast, focus_distance);
+        float aperture = (1 / fov) / fStop; 
+        glUniform1f(cameraInfoApertureLocation_raycast, aperture);
+        glUniform1ui(cameraInfoAntiAliasingLocation_raycast, anti_aliasing);
+        glUniform1f(cameraInfoExposureLocation_raycast, exposure);
+    }
     
     void UpdateCameraVectors()
     {

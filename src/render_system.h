@@ -13,6 +13,11 @@
 #include "camera.h"
 #include "quad_renderer.h"
 
+struct RaycastHit
+{
+    int partitionIndex;
+};
+
 struct PathVertex
 {
     alignas(16) glm::vec3 surfacePosition;
@@ -98,6 +103,12 @@ public:
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, lightPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * lightPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, lightPathVertexBuffer);
+
+        // RAYCAST BUFFER
+        glGenBuffers(1, &raycastBuffer);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, raycastBuffer);
+        glBufferStorage(GL_SHADER_STORAGE_BUFFER, sizeof(RaycastHit), nullptr, GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT);  
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, raycastBuffer);
 
         // RESERVE SPACE FOR GROUP ARRAYS
         uint32_t tilesX = static_cast<uint32_t>((static_cast<float>(SCA_W) + 32) / 32);
@@ -242,13 +253,15 @@ public:
             glUniform1ui(glGetUniformLocation(pathtraceShader, "u_tileX"), tile.x);
             glUniform1ui(glGetUniformLocation(pathtraceShader, "u_tileY"), tile.y);
 
+
             // RENDER TILE SEGMENT OF IMAGE
             auto dispatchStartTime = std::chrono::high_resolution_clock::now();
             glDispatchCompute(tile.width, tile.height, 1);
-            glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+            glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
             glFinish();
             auto dispatchEndTime = std::chrono::high_resolution_clock::now();
             float dispatchDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(dispatchEndTime - dispatchStartTime).count() / 1000000.0f;
+
 
             // SET GROUP TIMES
             if (!dynamicScene)
@@ -276,6 +289,32 @@ public:
         }
     }
 
+    int Raycast(unsigned int raycastShader, Camera &camera, int meshCount, int cursorX, int cursorY)
+    {   
+        glUseProgram(raycastShader);
+        camera.UpdateRaycasterUniforms(raycastShader);
+
+        // UPDATE UNIFORMS
+        glUniform1i(glGetUniformLocation(raycastShader, "u_cursorX"), cursorX);
+        glUniform1i(glGetUniformLocation(raycastShader, "u_cursorY"), cursorY);
+        glUniform1i(glGetUniformLocation(raycastShader, "u_width"), VIEWPORT_WIDTH);
+        glUniform1i(glGetUniformLocation(raycastShader, "u_height"), VIEWPORT_HEIGHT);
+        glUniform1i(glGetUniformLocation(raycastShader, "u_meshCount"), meshCount);
+
+        // RUN RAYCAST SHADER
+        glDispatchCompute(1, 1, 1);
+        glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT); 
+        glFinish();
+
+        // COPY HIT DATA TO CPU
+        RaycastHit hit;
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, raycastBuffer);
+        glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(RaycastHit), &hit);
+        
+        // RETURN PARTITION INDEX
+        return hit.partitionIndex;
+    }
+
     void RenderToViewport()
     {
         qRenderer.RenderToViewport(DisplayTexture);
@@ -289,7 +328,7 @@ public:
     uint32_t accumulationFrame = 0;
 private:
 
-    float renderBudget = 14.5;
+    float renderBudget = 12;
     float resolutionScale = 1.0f;
     uint32_t cameraBounces = 3;
     uint32_t lightBounces = 2;
@@ -302,6 +341,7 @@ private:
     unsigned int RenderTexture;
     unsigned int cameraPathVertexBuffer;
     unsigned int lightPathVertexBuffer;
+    unsigned int raycastBuffer;
     std::vector<RenderTile> TileQueue;
 
     std::vector<float> groupTimes;
@@ -324,7 +364,7 @@ private:
         }
         else if (accumulationFrame == 0) // INITIAL TILE WIDTH
         {
-            int tileWidth = 4;
+            int tileWidth = 5;
 
             // CREATE SCHEDULE QUEUE
             int x = 0;

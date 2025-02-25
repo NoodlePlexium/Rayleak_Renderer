@@ -78,6 +78,11 @@ int main()
     std::string pathtraceShaderSource = LoadShaderFromFile("./shaders/pathtrace.shader");
     unsigned int pathtraceShader = CreateComputeShader(pathtraceShaderSource);
 
+    // RAYCASTING COMPUTE SHADER
+    std::string raycastShaderSource = LoadShaderFromFile("./shaders/raycast.shader");
+    unsigned int raycastShader = CreateComputeShader(raycastShaderSource);
+
+
     // CREATE CAMERA
     Camera camera(pathtraceShader);
 
@@ -89,47 +94,42 @@ int main()
 
 
     // }----------{ LOAD 3D MESHES }----------{
-    uint32_t modelIncrement = 0;
     std::vector<Model> models;
     std::vector<Mesh*> meshes;
     std::vector<Material> materials;
     std::vector<Texture> textures;
 
+    std::cout << "creating stone mat \n";
     Material stoneMat;
     stoneMat.LoadAlbedo("textures/stone_colour.jpg");
-    stoneMat.LoadNormal("textures/stone_normal.jpg");
-    stoneMat.LoadRoughness("textures/stone_roughness.jpg");
+    // stoneMat.LoadNormal("textures/stone_normal.jpg");
+    // stoneMat.LoadRoughness("textures/stone_roughness.jpg");
 
     Material roofMat;
     roofMat.LoadAlbedo("textures/roof_colour.jpg");
-    roofMat.LoadNormal("textures/roof_normal.jpg");
-    roofMat.LoadRoughness("textures/roof_roughness.jpg");
+    // roofMat.LoadNormal("textures/roof_normal.jpg");
+    // roofMat.LoadRoughness("textures/roof_roughness.jpg");
 
     Material curtainMat;
-    curtainMat.LoadAlbedo("textures/fabric_colour.jpg");
-    curtainMat.LoadNormal("textures/fabric_normal.jpg");
-    curtainMat.LoadRoughness("textures/fabric_roughness.jpg");
-    curtainMat.data.colour = glm::vec3(0.91f, 0.357f, 0.337f);
+    // curtainMat.LoadAlbedo("textures/fabric_colour.jpg");
+    // curtainMat.LoadNormal("textures/fabric_normal.jpg");
+    // curtainMat.LoadRoughness("textures/fabric_roughness.jpg");
+    // curtainMat.data.colour = glm::vec3(0.91f, 0.357f, 0.337f);
 
     Material bannerMat;
-    bannerMat.LoadAlbedo("textures/fabric_colour.jpg");
-    bannerMat.LoadNormal("textures/fabric_normal.jpg");
-    bannerMat.LoadRoughness("textures/fabric_roughness.jpg");
-    bannerMat.data.colour = glm::vec3(0.224f, 0.302f, 0.502f);
+    // bannerMat.LoadAlbedo("textures/fabric_colour.jpg");
+    // bannerMat.LoadNormal("textures/fabric_normal.jpg");
+    // bannerMat.LoadRoughness("textures/fabric_roughness.jpg");
+    // bannerMat.data.colour = glm::vec3(0.224f, 0.302f, 0.502f);
 
     materials.push_back(stoneMat);
-    materials.push_back(roofMat);
-    materials.push_back(curtainMat);
-    materials.push_back(bannerMat);
+    // materials.push_back(roofMat);
+    // materials.push_back(curtainMat);
+    // materials.push_back(bannerMat);
 
-    LoadOBJ("./models/vw.obj", meshes, models, modelIncrement);
-    LoadOBJ("./models/lion.obj", meshes, models, modelIncrement);
+    LoadOBJ("./models/vw.obj", meshes, models);
+    LoadOBJ("./models/lion.obj", meshes, models);
 
-    // APPLY STONE TO EVERYTHING
-    for (int i=0; i<meshes.size(); i++)
-    {
-        meshes[i]->materialIndex = 0;
-    }
 
     // // APPLY ROOF MATERIAL
     // uint32_t roofMeshIndex = FindMeshByName("roof", meshes);
@@ -146,14 +146,16 @@ int main()
     // }----------{ LOAD 3D MESHES }----------{
 
 
+
     // }----------{ SEND MESH DATA TO THE GPU }----------{
     ModelManager modelManager(pathtraceShader);
-    modelManager.AddModelToScene(models[0], pathtraceShader);
-    // modelManager.AddModelToScene(models[1], pathtraceShader);
-    modelManager.AddMaterialToScene(materials[0].data, pathtraceShader);
-    modelManager.AddMaterialToScene(materials[1].data, pathtraceShader);
-    modelManager.AddMaterialToScene(materials[2].data, pathtraceShader);
-    modelManager.AddMaterialToScene(materials[3].data, pathtraceShader);
+    modelManager.AddModelToScene(models[0]);
+    // modelManager.AddModelToScene(models[1]);
+    modelManager.AddMaterialToScene(materials[0].data);
+    // modelManager.AddMaterialToScene(materials[1].data);
+    // modelManager.AddMaterialToScene(materials[2].data);
+    // modelManager.AddMaterialToScene(materials[3].data);
+
     // }----------{ SEND MESH DATA TO THE GPU }----------{
 
 
@@ -223,9 +225,19 @@ int main()
     spotlight2.angle = 10.0f;
     spotlight2.falloff = 0.001f;
     // spotlights.push_back(spotlight2);
-
-
-    modelManager.CopyLightDataToGPU(directionalLights, pointLights, spotlights, pathtraceShader);
+    
+    for (int i=0; i<directionalLights.size(); i++)
+    {
+        modelManager.AddDirectionalLightToScene(directionalLights[i], directionalLights.size());
+    }
+    for (int i=0; i<pointLights.size(); i++)
+    {
+        modelManager.AddPointLightToScene(pointLights[i], pointLights.size());
+    }
+    for (int i=0; i<spotlights.size(); i++)
+    {
+        modelManager.AddSpotlightToScene(spotlights[i], spotlights.size());
+    }
     // }----------{ SEND LIGHT DATA TO THE GPU }----------{
 
 
@@ -361,24 +373,21 @@ int main()
         // }----------{ PATH TRACER ENDS }----------{
 
 
-    
-
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
         renderSystem.RenderToViewport();
         // }----------{ RENDER THE QUAD TO THE FRAME BUFFER }----------{
 
 
         // }----------{ APP LAYOUT }----------{
-        UI.BeginAppLayout(cursorOverViewport);
-        UI.RenderViewportPanel(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, frameTime, cursorOverViewport, renderSystem.GetFrameBufferTextureID(), camera, modelManager, models);
+        UI.BeginAppLayout();
+        UI.RenderViewportPanel(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, frameTime, cursorOverViewport, renderSystem.GetFrameBufferTextureID(), camera, modelManager, models, meshes, renderSystem, raycastShader);
         UI.RenderObjectsPanel(meshes, VIEWPORT_HEIGHT);
         ImGui::Dummy(ImVec2(1, 0));
-        UI.RenderModelExplorer(meshes, models, modelIncrement);
+        UI.RenderModelExplorer(meshes, models);
         UI.RenderMaterialExplorer(materials, textures, modelManager);
         UI.RenderTexturesPanel(textures);
         UI.EndAppLayout();
         // }----------{ APP LAYOUT ENDS   }----------{
-
 
         UI.RenderUI();
         glfwSwapBuffers(window);

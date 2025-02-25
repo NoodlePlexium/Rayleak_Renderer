@@ -270,20 +270,12 @@ struct Model
 {
     uint32_t id;
     std::vector<Mesh*> submeshPtrs;
-    char* name;
-    char* tempName;
+    char name[32];
+    char tempName[32];
     bool inScene = false;
-
-    Model()
-    {
-        name = new char[32];
-        tempName = new char[32];
-        strcpy_s(name, 32, "material");
-        strcpy_s(tempName, 32, "material");
-    }
 };
 
-void LoadOBJ(const char* filepath, std::vector<Mesh*>& meshes, std::vector<Model>& models, uint32_t &modelIncrement)
+void LoadOBJ(const char* filepath, std::vector<Mesh*>& meshes, std::vector<Model>& models)
 {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
@@ -295,8 +287,9 @@ void LoadOBJ(const char* filepath, std::vector<Mesh*>& meshes, std::vector<Model
     }
 
     Model model;
-    strcpy_s(model.name, 32, ExtractName(filepath).substr(0, 32).c_str());
-    strcpy_s(model.tempName, 32, model.name);
+    std::string name = ExtractName(filepath).substr(0, 32);
+    strcpy_s(model.name, 32, name.c_str());
+    strcpy_s(model.tempName, 32, name.c_str());
 
     // FOR EACH MESH IN THE FILE
     Debug::StartTimer();
@@ -350,7 +343,7 @@ void LoadOBJ(const char* filepath, std::vector<Mesh*>& meshes, std::vector<Model
         model.submeshPtrs.push_back(mesh);
     }
     models.push_back(model);
-    model.id = modelIncrement++;
+    model.id = models.size();
     Debug::EndTimer();
 }
 

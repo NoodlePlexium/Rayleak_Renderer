@@ -20,7 +20,6 @@ struct Material
     float emission;
     float IOR;
     int refractive;
-
     uint64_t albedoHandle;
     uint64_t normalHandle;
     uint64_t roughnessHandle;
@@ -431,7 +430,7 @@ RayHit CastRay(Ray ray)
         transformedRay.origin = (meshPartitions[m].inverseTransform * vec4(ray.origin, 1.0)).xyz;
         transformedRay.dir = (meshPartitions[m].inverseTransform * vec4(ray.dir, 0.0)).xyz;
 
-
+        // TRAVERSE BVH
         uint stack[32];
         int stackIndex = 0;
         stack[stackIndex] = bvhStart;
@@ -508,6 +507,7 @@ bool ShadowCast(Ray ray, vec3 lightPos)
         transformedRay.origin = (meshPartitions[m].inverseTransform * vec4(ray.origin, 1.0)).xyz;
         transformedRay.dir = (meshPartitions[m].inverseTransform * vec4(ray.dir, 0.0)).xyz;
 
+        // TRAVERSE BVH
         uint stack[32];
         int stackIndex = 0;
         stack[stackIndex] = bvhStart;
