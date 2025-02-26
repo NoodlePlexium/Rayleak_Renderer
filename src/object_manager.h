@@ -101,6 +101,7 @@ public:
     {
         glUseProgram(pathtraceShader);
 
+        model.inScene = true;
         meshCount += model.submeshPtrs.size();
         glUniform1i(glGetUniformLocation(pathtraceShader, "u_meshCount"), meshCount);
         

@@ -75,7 +75,6 @@ public:
         glUseProgram(quadShader);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, DisplayTexture);
-        glUniform1i(glGetUniformLocation(quadShader, "DisplayTexture"), 0);
         glBindVertexArray(quadVAO);
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
         glBindVertexArray(0);

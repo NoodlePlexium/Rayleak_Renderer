@@ -102,7 +102,7 @@ int main()
     std::cout << "creating stone mat \n";
     Material stoneMat;
     stoneMat.LoadAlbedo("textures/stone_colour.jpg");
-    // stoneMat.LoadNormal("textures/stone_normal.jpg");
+    stoneMat.LoadNormal("textures/stone_normal.jpg");
     // stoneMat.LoadRoughness("textures/stone_roughness.jpg");
 
     Material roofMat;
@@ -127,7 +127,7 @@ int main()
     // materials.push_back(curtainMat);
     // materials.push_back(bannerMat);
 
-    LoadOBJ("./models/vw.obj", meshes, models);
+    LoadOBJ("./models/test_refract.obj", meshes, models);
     LoadOBJ("./models/lion.obj", meshes, models);
 
 
@@ -381,12 +381,13 @@ int main()
         // }----------{ APP LAYOUT }----------{
         UI.BeginAppLayout();
         UI.RenderViewportPanel(VIEWPORT_WIDTH, VIEWPORT_HEIGHT, frameTime, cursorOverViewport, renderSystem.GetFrameBufferTextureID(), camera, modelManager, models, meshes, renderSystem, raycastShader);
-        UI.RenderObjectsPanel(meshes, VIEWPORT_HEIGHT);
+        UI.RenderObjectsPanel(models, VIEWPORT_HEIGHT);
         ImGui::Dummy(ImVec2(1, 0));
         UI.RenderModelExplorer(meshes, models);
         UI.RenderMaterialExplorer(materials, textures, modelManager);
         UI.RenderTexturesPanel(textures);
         UI.EndAppLayout();
+        glViewport(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT); // RESET GL VIEWPORT
         // }----------{ APP LAYOUT ENDS   }----------{
 
         UI.RenderUI();

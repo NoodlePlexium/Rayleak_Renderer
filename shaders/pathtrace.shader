@@ -97,17 +97,6 @@ struct Ray
     vec3 dir;
 };
 
-struct RayHit
-{
-    vec3 pos;
-    vec3 normal;
-    vec2 uv;
-    float dist;
-    bool hit;
-    bool frontFace;
-    uint materialIndex;
-};
-
 struct LightPathOrigin
 {
     vec3 position;
@@ -120,17 +109,13 @@ struct PathVertex
     vec3 surfacePosition;
     vec3 surfaceNormal;
     vec3 surfaceColour;
-    vec3 reflectedDir;
-    vec3 outgoingLight;
+    vec3 incommingDir;
     vec3 directLight;
     float surfaceRoughness;
     float surfaceEmission;
-    float IOR;
-    int refractive;
     int hitSky;
     int inside;
     int refracted;
-    int cachedDirectLight;
 };
 
 layout(binding = 2) readonly buffer VertexBuffer {
@@ -171,10 +156,6 @@ layout(binding = 10) readonly buffer SpotlightLightBuffer {
 
 layout(binding = 11) buffer CameraPathVertexBuffer {
     PathVertex cameraPathVertices[];
-};
-
-layout(binding = 12) buffer LightPathVertexBuffer {
-    PathVertex lightPathVertices[];
 };
 
 uniform uint u_tileX;
@@ -240,18 +221,6 @@ vec3 RandomHemisphereDirectionCosine(vec3 normal, uint seed)
     return randDir;
 }
 
-vec3 RandomPointOnTriangle(uint v1_index, uint v2_index, uint v3_index, uint seed)
-{
-    Vertex v1 = vertices[indices[v1_index]];
-    Vertex v2 = vertices[indices[v2_index]];
-    Vertex v3 = vertices[indices[v3_index]];
-    float a = Random(seed);
-    float b = Random(seed+1);
-    float rootA = sqrt(a);
-    vec3 randomPoint = v1.pos * (1 - rootA) + v2.pos * (rootA * (1 - b)) + v3.pos * (b * rootA);
-    return randomPoint;
-}
-
 // ADAPTED FROM USER Pommy https://stackoverflow.com/questions/5837572/generate-a-random-point-within-a-circle-uniformly
 vec2 RandomPointInCircle(uint seed)
 {
@@ -272,39 +241,6 @@ float CosineInterpolation(float min, float max, float value)
     // CONVERT TO RADIANS
     float radians = ((value - min) / (max - min)) * 1.570796f; 
     return cos(radians);
-}
-
-vec3 PixelRayPos(uint x, uint y, uint width, uint height, uint seed, bool antiAliased)
-{
-    float FOV_Radians = DegreesToRadians(cameraInfo.FOV);
-    float aspectRatio = float(width) / float(height);
-    float nearPlane = 0.1f;
-    
-    // VIEWING PLANE
-    float planeHeight = nearPlane * tan(FOV_Radians * 0.5f);
-    float planeWidth = planeHeight * aspectRatio;
-
-    // NORMALISED PIXEL COORDINATES
-    float nx, ny;
-    if (antiAliased)
-    {
-        vec2 randomCirclePoint = RandomPointInCircle(seed);
-        nx = (x + randomCirclePoint.x) / (width - 1.0f);
-        ny = (y + randomCirclePoint.y) / (height - 1.0f);
-    }
-    else
-    {
-        nx = (x) / (width - 1.0f);
-        ny = (y) / (height - 1.0f);
-    }
-
-    // CALCULATE PIXEL COORDINATE IN PLANE SPACE
-    vec3 localBL = vec3(-planeWidth * 0.5f, -planeHeight * 0.5f, nearPlane);
-    vec3 localPoint = localBL + vec3(planeWidth * nx, planeHeight * ny, 0.0f);
-
-    // CALCULATE PIXEL COORDINATE IN WORLD SPACE
-    vec3 worldPoint = cameraInfo.pos + cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
-    return worldPoint;
 }
 
 vec3 BarycentricNormal(uint v1_index, uint v2_index, uint v3_index, vec3 pos, float area)
@@ -341,12 +277,21 @@ float IntersectAABB(Ray ray, vec3 aabbMin, vec3 aabbMax)
     return hit ? distNear : 100000.0f;
 }
 
-RayHit RayTriangle(Ray ray, uint v1_index, uint v2_index, uint v3_index)
+struct RayHit
 {
-    const Vertex v1 = vertices[v1_index];
-    const Vertex v2 = vertices[v2_index];
-    const Vertex v3 = vertices[v3_index];
+    vec3 pos;
+    vec3 normal;
+    vec3 faceNormal;
+    vec3 tangent;
+    vec2 uv;
+    float dist;
+    bool hit;
+    bool frontFace;
+    uint materialIndex;
+};
 
+RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3)
+{
     // DEFAULT RAY HIT
     RayHit hit;
     hit.pos = vec3(0.0f, 0.0f, 0.0f);
@@ -382,10 +327,33 @@ RayHit RayTriangle(Ray ray, uint v1_index, uint v2_index, uint v3_index)
     // SET AND RETURN THE HIT INFORMATION
     hit.pos = ray.origin + ray.dir * dist;
     vec3 normal = normalize(v1.normal * w + v2.normal * u + v3.normal * v); // INTERPOLATE NORMAL USING BARYCENTRIC COORDINATES
+    vec3 faceNormal = normalize(cross(edge1, edge2));
+
+    // Calculate UV differences
+    vec2 deltaUV1 = vec2(v2.u, v2.v) - vec2(v1.u, v1.v);
+    vec2 deltaUV2 = vec2(v3.u, v3.v) - vec2(v1.u, v1.v);
+
+    // Calculate denominator for the tangent formula
+    float r = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
+
+    // Avoid division by zero (degenerate UVs)
+    if (abs(r) > 1e-6) {
+        float r_inv = 1.0f / r;
+        hit.tangent = normalize((edge1 * deltaUV2.y - edge2 * deltaUV1.y) * r_inv);
+    } 
+    else 
+    {
+        hit.tangent = vec3(1.0f, 0.0f, 0.0f);
+    }
+
+    // Ensure orthogonality with the normal (optional but recommended)
+    hit.tangent = normalize(hit.tangent - dot(hit.tangent, hit.normal) * hit.normal);
+
 
     // SET HIT VALUES
     hit.frontFace = dot(ray.dir, normal) < 0.0f;
     hit.normal = hit.frontFace ? normal : -normal;
+    hit.faceNormal = hit.frontFace ? faceNormal : -faceNormal;
     hit.uv = vec2(v1.u, v1.v) * w + vec2(v2.u, v2.v) * u + vec2(v3.u, v3.v) * v;
     hit.dist = dist;
     hit.hit = true;
@@ -470,9 +438,9 @@ RayHit CastRay(Ray ray)
                     uint v3_index = verticesStart + indices[index + 2];
                     RayHit newHit = RayTriangle(
                         transformedRay, 
-                        v1_index, 
-                        v2_index, 
-                        v3_index
+                        vertices[v1_index], 
+                        vertices[v2_index], 
+                        vertices[v3_index]
                     );
                     if (newHit.dist < hit.dist) 
                     {
@@ -484,10 +452,27 @@ RayHit CastRay(Ray ray)
             }
         }
     }
-    mat3 normalMatrix = transpose(mat3(inverseModelTransform));
-    hit.normal = normalMatrix * hit.normal;
-    hit.pos = (inverse(inverseModelTransform) * vec4(hit.pos, 1.0)).xyz;
+    if (hit.hit)
+    {
+        if ((materials[hit.materialIndex].textureFlags & (1 << 1)) != 0)
+        {
+            vec3 bitangent = normalize(cross(hit.tangent, hit.faceNormal));
+            mat3 TBM = mat3(hit.tangent, bitangent, hit.faceNormal);
+            vec3 normalMap = texture(sampler2D(materials[hit.materialIndex].normalHandle), hit.uv).xyz * 2 - 1;
+            hit.normal = normalize(TBM * normalMap);
+        }
+        mat3 normalMatrix = transpose(mat3(inverseModelTransform));
+        hit.normal = normalMatrix * hit.normal;
+        hit.pos = (inverse(inverseModelTransform) * vec4(hit.pos, 1.0)).xyz;
+    }
     return hit;
+}
+
+vec3 GetTangent(Ray ray)
+{
+    RayHit hit = CastRay(ray);
+    if (hit.hit) return hit.normal;
+    else return vec3(0,0,0);
 }
 
 bool ShadowCast(Ray ray, vec3 lightPos)
@@ -539,9 +524,9 @@ bool ShadowCast(Ray ray, vec3 lightPos)
                     uint v3_index = verticesStart + indices[index + 2];
                     RayHit newHit = RayTriangle(
                         transformedRay, 
-                        v1_index, 
-                        v2_index, 
-                        v3_index
+                        vertices[v1_index], 
+                        vertices[v2_index], 
+                        vertices[v3_index]
                     );
                     
                     if (newHit.dist < lightDist) 
@@ -692,7 +677,7 @@ vec3 SpotlightContribution(vec3 position, vec3 normal, float roughness, uint see
 }
 
 // GENERATES A PATH FROM THE CAMERA AND STORES INFO IN PATHVERTEX BUFFER
-int CameraPath(Ray ray, uint bounces, uint pixelIndex, uint seed)
+int GeneratePath(Ray ray, uint bounces, uint pixelIndex, uint seed)
 {
     uint pathIndex = pixelIndex * (bounces+1);
 
@@ -708,7 +693,6 @@ int CameraPath(Ray ray, uint bounces, uint pixelIndex, uint seed)
         cameraPathVertices[pathIndex + b].inside = 0;
         cameraPathVertices[pathIndex + b].refracted = 0;
         cameraPathVertices[pathIndex + b].hitSky = 0;
-        cameraPathVertices[pathIndex + b].cachedDirectLight = 0;
 
         if (hit.hit)
         {   
@@ -736,8 +720,7 @@ int CameraPath(Ray ray, uint bounces, uint pixelIndex, uint seed)
             }
 
             cameraPathVertices[pathIndex + b].surfaceEmission = material.emission;
-            cameraPathVertices[pathIndex + b].refractive = material.refractive;
-            cameraPathVertices[pathIndex + b].reflectedDir = -ray.dir;
+            cameraPathVertices[pathIndex + b].incommingDir = ray.dir;
             cameraPathVertices[pathIndex + b].inside = hit.frontFace ? 0 : 1;
             
             // PREPARE FOR NEXT BOUNCE
@@ -748,7 +731,7 @@ int CameraPath(Ray ray, uint bounces, uint pixelIndex, uint seed)
                 float random = Random(seed + b + 534805);
                 if (random > reflectProbability)
                 {
-                    float eta = hit.frontFace ? (1.0f / material.IOR) : material.IOR;
+                    float eta = hit.frontFace ? 1.0 / material.IOR : material.IOR;
                     float cosTheta = min(dot(ray.dir, hit.normal), 1.0f);
                     float sinTheta = sqrt(1.0f - cosTheta * cosTheta);
                     refracted = eta * sinTheta < 1.0f;
@@ -796,7 +779,7 @@ vec3 EvaluatePath(int segments, uint bounces, uint pixelIndex, uint seed)
     {
         if (cameraPathVertices[pathIndex + i].hitSky == 1)
         {
-            light += vec3(0.5f, 0.7f, 0.95f) * 2.0f;
+            // light += vec3(0.5f, 0.7f, 0.95f) * 2.0f;
             continue;
         }
 
@@ -804,14 +787,15 @@ vec3 EvaluatePath(int segments, uint bounces, uint pixelIndex, uint seed)
         const vec3 position = cameraPathVertices[pathIndex + i].surfacePosition;
         const vec3 normal = cameraPathVertices[pathIndex + i].surfaceNormal;
         const vec3 surfaceColour = cameraPathVertices[pathIndex + i].surfaceColour;
-        const vec3 reflectedDir = cameraPathVertices[pathIndex + i].reflectedDir;
+        const vec3 incommingDir = cameraPathVertices[pathIndex + i].incommingDir;
+
+        // PATH VERTEX SURFACE MATERIAL
         const float surfaceEmission = cameraPathVertices[pathIndex + i].surfaceEmission;
         const float surfaceRoughness = cameraPathVertices[pathIndex + i].surfaceRoughness;
         const int inside = cameraPathVertices[pathIndex + i].inside;
-        const int refractive = cameraPathVertices[pathIndex + i].refractive;
         const int refracted = cameraPathVertices[pathIndex + i].refracted;
 
-        float cosineFactor = max(0.0f, dot(normal, reflectedDir));
+        float cosineFactor = max(0.0f, dot(normal, incommingDir));
         if (refracted == 1 || inside == 1) cosineFactor = 1;
 
         vec3 directLight = vec3(0.0f, 0.0f, 0.0f);
@@ -823,12 +807,45 @@ vec3 EvaluatePath(int segments, uint bounces, uint pixelIndex, uint seed)
             directLight += SpotlightContribution(position, normal, surfaceRoughness, seed + i * 10, true);
         }
 
-        vec3 indirectLight = light * surfaceColour * cosineFactor;
+        vec3 indirectLight = light * surfaceColour;
         vec3 emittedLight = surfaceColour * surfaceEmission;
         light = indirectLight + directLight * surfaceColour + emittedLight;
     }
 
     return light;
+}
+
+vec3 PixelRayPos(uint x, uint y, uint width, uint height, uint seed, bool antiAliased)
+{
+    float FOV_Radians = DegreesToRadians(cameraInfo.FOV);
+    float aspectRatio = float(width) / float(height);
+    float nearPlane = 0.1f;
+    
+    // VIEWING PLANE
+    float planeHeight = nearPlane * tan(FOV_Radians * 0.5f);
+    float planeWidth = planeHeight * aspectRatio;
+
+    // NORMALISED PIXEL COORDINATES
+    float nx, ny;
+    if (antiAliased)
+    {
+        vec2 randomCirclePoint = RandomPointInCircle(seed);
+        nx = (x + randomCirclePoint.x) / (width - 1.0f);
+        ny = (y + randomCirclePoint.y) / (height - 1.0f);
+    }
+    else
+    {
+        nx = (x) / (width - 1.0f);
+        ny = (y) / (height - 1.0f);
+    }
+
+    // CALCULATE PIXEL COORDINATE IN PLANE SPACE
+    vec3 localBL = vec3(-planeWidth * 0.5f, -planeHeight * 0.5f, nearPlane);
+    vec3 localPoint = localBL + vec3(planeWidth * nx, planeHeight * ny, 0.0f);
+
+    // CALCULATE PIXEL COORDINATE IN WORLD SPACE
+    vec3 worldPoint = cameraInfo.pos + cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
+    return worldPoint;
 }
 
 // SIMPLIFIED ACES TONE MAPPING
@@ -864,7 +881,7 @@ void main()
     camRay.dir = normalize(camRay.origin - cameraInfo.pos);
 
     // DEPTH OF FIELD
-    if (cameraInfo.DOF == 1)
+    if (cameraInfo.DOF == 1 && u_resolution_scale > 0.9)
     {
         float ratio = dot(cameraInfo.forward, camRay.dir);
         float inverseRatio = 1 / ratio;
@@ -879,8 +896,9 @@ void main()
     }
 
     // TRACE CAMERA TO GET PIXEL COLOUR
-    int cameraSegments = CameraPath(camRay, u_bounces, pixelIndex, seed);
-    vec3 colour = EvaluatePath(cameraSegments, u_bounces, pixelIndex, seed) * cameraInfo.exposure;
+    int pathSegments = GeneratePath(camRay, u_bounces, pixelIndex, seed);
+    vec3 colour = EvaluatePath(pathSegments, u_bounces, pixelIndex, seed) * cameraInfo.exposure;
+    // vec3 colour = Test(camRay, u_bounces, pixelIndex, seed);
 
     // FRAME ACCUMULATION
     vec4 oldAvg = imageLoad(renderImage, ivec2(pX, pY)); 

@@ -3,6 +3,7 @@
 #include <backends/imgui_impl_glfw.h>
 #include <imgui.h>
 #include "../lib/tinyfiledialogs/tinyfiledialogs.h"
+#include "thumbnail_renderer.h"
 
 // STANDARD LIBRARY
 #include <cstdint>
@@ -208,7 +209,7 @@ public:
         ImGui::EndChild();
     }
 
-    void RenderObjectsPanel(const std::vector<Mesh*> &meshes, float VIEWPORT_HEIGHT)
+    void RenderObjectsPanel(const std::vector<Model> &models, float VIEWPORT_HEIGHT)
     {
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA("#000000"));
@@ -224,16 +225,22 @@ public:
         ImGui::Dummy(ImVec2(1, GAP));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, GAP));
         ImGui::Indent(GAP);
-        for (int i=0; i<meshes.size(); ++i)
+        for (int i=0; i<models.size(); ++i)
         {
-            ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-            ImGui::PushID(i);
-            if (ImGui::Button(meshes[i]->name.c_str(), ImVec2(SpaceX() - GAP, 0)))
+            if (models[i].inScene)
             {
-                // std::to_string(meshes[i]->id).c_str()
+                for (const Mesh* mesh : models[i].submeshPtrs)
+                {
+                    ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+                    ImGui::PushID(i);
+                    if (ImGui::Button(mesh->name.c_str(), ImVec2(SpaceX() - GAP, 0)))
+                    {
+                        // std::to_string(meshes[i]->id).c_str()
+                    }
+                    ImGui::PopID();
+                    ImGui::PopStyleVar();
+                }
             }
-            ImGui::PopID();
-            ImGui::PopStyleVar();
         }
         ImGui::Unindent();
         ImGui::PopStyleVar();
@@ -342,6 +349,9 @@ public:
             col[1] = materialData.colour.y;
             col[2] = materialData.colour.z;
             ImGui::ColorPicker3("Colour Picker", col, 0);
+            updatedMaterial |= col[0] != materialData.colour.x;
+            updatedMaterial |= col[1] != materialData.colour.y;
+            updatedMaterial |= col[2] != materialData.colour.z;
             materialData.colour.x = col[0];
             materialData.colour.y = col[1];
             materialData.colour.z = col[2];
@@ -368,6 +378,9 @@ public:
             {
                 // UPDATE MATERIAL SETTINGS ON THE GPU
                 modelManager.UpdateMaterial(materialData, selectedMaterialIndex);
+
+                // RERENDER MATERIAL THUMBNAIL
+                thumbnailRenderer.RenderThumbnail(materials[selectedMaterialIndex], MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
 
                 // RESTART RENDER
                 restartRender = true;
@@ -424,6 +437,7 @@ public:
     }
 
 private:
+    ThumbnailRenderer thumbnailRenderer;
     unsigned int pathtraceShader;
     ImFont* fontBody;
     ImFont* fontHeader;
@@ -713,6 +727,8 @@ private:
         if (ImGui::Button("Create Material", ImVec2(120.0f, 0)))
         {   
             Material newMaterial;
+            newMaterial.CreateThumbnailFrameBuffer(MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
+            thumbnailRenderer.RenderThumbnail(newMaterial, MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
             materials.push_back(newMaterial);
             modelManager.AddMaterialToScene(newMaterial.data);
             std::cout << "create material pressed" << std::endl;
@@ -748,7 +764,7 @@ private:
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, hoverColour);
         if (ImGui::ImageButton(
             buttonID.c_str(), 
-            OBJ_Icon.textureID, 
+            material.FrameBufferTextureID, 
             ImVec2(MODEL_THUMBNAIL_SIZE-4, MODEL_THUMBNAIL_SIZE-2)))
         {
             selectedMaterialIndex = i;

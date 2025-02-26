@@ -23,17 +23,13 @@ struct PathVertex
     alignas(16) glm::vec3 surfacePosition;
     alignas(16) glm::vec3 surfaceNormal;
     alignas(16) glm::vec3 surfaceColour;
-    alignas(16) glm::vec3 reflectedDir;
-    alignas(16) glm::vec3 outgoingLight;
+    alignas(16) glm::vec3 incommingDir;
     alignas(16) glm::vec3 directLight;
     float surfaceRoughness;
     float surfaceEmission;
-    float IOR;
-    int refractive;
     int hitSky;
     int inside;
     int refracted;
-    int cachedDirectLight;
 };
 
 struct RenderTile
@@ -88,7 +84,6 @@ public:
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         glBindTexture(GL_TEXTURE_2D, 1);
-
 
         // CAMERA PATH BUFFER
         uint32_t cameraPathVertexCount = SCA_W * SCA_H * (cameraBounces+1);
@@ -245,7 +240,7 @@ public:
             ScheduleRenderTiles(tilesX, tilesY, accumulationFrame);
         }
 
-        if (!TileQueue.empty())
+        while (!TileQueue.empty())
         {
             const RenderTile &tile = TileQueue.front();
 
@@ -278,9 +273,9 @@ public:
             TileQueue.erase(TileQueue.begin());
 
 
-            // auto now = std::chrono::high_resolution_clock::now();
-            // float totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
-            // if (totalDuration + dispatchDuration >= renderBudget) break; // STOP RENDERING AFTER 16 MILLISECONDS
+            auto now = std::chrono::high_resolution_clock::now();
+            float totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
+            if (totalDuration + dispatchDuration >= renderBudget) break; // STOP RENDERING AFTER 16 MILLISECONDS
         }
 
         if (TileQueue.empty()) {
@@ -328,7 +323,7 @@ public:
     uint32_t accumulationFrame = 0;
 private:
 
-    float renderBudget = 12;
+    float renderBudget = 14;
     float resolutionScale = 1.0f;
     uint32_t cameraBounces = 3;
     uint32_t lightBounces = 2;

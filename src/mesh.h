@@ -338,6 +338,7 @@ void LoadOBJ(const char* filepath, std::vector<Mesh*>& meshes, std::vector<Model
             mesh->indices.emplace_back(indicesUsed);
             indicesUsed += 1;
         }
+        
         mesh->BuildBVH();
         meshes.push_back(mesh);  
         model.submeshPtrs.push_back(mesh);
@@ -345,6 +346,56 @@ void LoadOBJ(const char* filepath, std::vector<Mesh*>& meshes, std::vector<Model
     models.push_back(model);
     model.id = models.size();
     Debug::EndTimer();
+}
+
+
+
+
+struct SimpleMesh
+{
+    std::vector<float> vertices;
+    std::vector<uint32_t>indices;
+};
+
+void LoadSphere(const char* filepath, SimpleMesh& mesh)
+{
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, err;
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filepath)) {
+        throw std::runtime_error(warn + err);
+    }
+    
+    mesh.vertices.reserve(shapes[0].mesh.indices.size()); 
+    mesh.indices.reserve(shapes[0].mesh.indices.size());
+    uint32_t indicesUsed = 0;
+
+    for (const auto &index : shapes[0].mesh.indices)
+    {
+        if (index.vertex_index >= 0)
+        {
+            mesh.vertices.emplace_back(attrib.vertices[3 * index.vertex_index]);
+            mesh.vertices.emplace_back(attrib.vertices[3 * index.vertex_index + 1]);
+            mesh.vertices.emplace_back(attrib.vertices[3 * index.vertex_index + 2]);
+        }
+
+        if (index.normal_index >= 0)
+        {
+            mesh.vertices.emplace_back(attrib.normals[3 * index.normal_index]);
+            mesh.vertices.emplace_back(attrib.normals[3 * index.normal_index + 1]);
+            mesh.vertices.emplace_back(attrib.normals[3 * index.normal_index + 2]);
+        }
+
+        if (index.texcoord_index >= 0)
+        {
+            mesh.vertices.emplace_back(attrib.texcoords[2 * index.texcoord_index]);
+            mesh.vertices.emplace_back(attrib.texcoords[2 * index.texcoord_index + 1]);
+        }
+        mesh.indices.emplace_back(indicesUsed);
+        indicesUsed += 1;
+    }
 }
 
 uint32_t FindMeshByName(const std::string &name, std::vector<Mesh*>& meshes)
