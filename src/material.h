@@ -2,9 +2,11 @@
 
 // EXTERNAL LIBRARIES
 #define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <GL/glew.h>
 #include "glm/glm.hpp"
 #include "stb_image.h"
+#include "stb_image_write.h"
 #include "debug.h"
 
 // STANDARD LIBRARY
@@ -16,6 +18,41 @@
 
 // PROJECT HEADERS
 #include "utils.h"
+
+void SaveRender(unsigned int textureID, const char* filename)
+{
+    int width = 0, height = 0;
+
+    // GET IMAGE DIMENSIONS
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH, &width);
+    glGetTexLevelParameteriv(GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT, &height);
+
+    // GET IMAGE DATA
+    unsigned char* imageData = new unsigned char[width * height * 4];
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageData);
+
+    // FLIP IMAGE VERTICALLY
+    unsigned char* flippedImage = new unsigned char[width * height * 4];
+
+    for (int y=0; y<height; y++)
+    {
+        for (int x=0; x<width; x++)
+        {
+            int flippedIndex = y * width + x;
+            int imageIndex = (height - y - 1) * width + x;
+            flippedImage[flippedIndex * 4] = imageData[imageIndex * 4];
+            flippedImage[flippedIndex * 4 + 1] = imageData[imageIndex * 4 + 1];
+            flippedImage[flippedIndex * 4 + 2] = imageData[imageIndex * 4 + 2];
+            flippedImage[flippedIndex * 4 + 3] = imageData[imageIndex * 4 + 3];
+        }
+    }
+
+    // SAVE IMAGE
+    stbi_write_png(filename, width, height, 4, flippedImage, width * 4);
+    delete[] flippedImage;
+    delete[] imageData;
+}
 
 struct Texture
 {
@@ -32,7 +69,7 @@ struct Texture
     void LoadImage(const std::string filepath)
     {
         int width, height, bpp;
-        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 3);
+        unsigned char* localbuffer = stbi_load(filepath.c_str(), &width, &height, &bpp, 4);
         if (!localbuffer)
         {
             std::cerr << "[LoadImage] Failed! Could not find image at: " << filepath << std::endl;
@@ -49,14 +86,13 @@ struct Texture
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, localbuffer);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, localbuffer);
         glGenerateMipmap(GL_TEXTURE_2D); 
         stbi_image_free(localbuffer);
 
         textureHandle = glGetTextureHandleARB(textureID);
     }
 };
-
 
 struct MaterialData
 {
@@ -83,7 +119,6 @@ struct MaterialData
         textureFlags    = 0;
     }
 };
-
 
 struct Material
 {

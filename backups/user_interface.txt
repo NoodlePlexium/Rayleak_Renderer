@@ -160,13 +160,12 @@ public:
             if (cursorOverViewport)
             {
                 ImVec2 mousePos = ImGui::GetMousePos();
-
         
                 int y = height - mousePos.y + 3;
-                int meshIndex = renderSystem.Raycast(raycastShader, camera, gpu_memory.meshCount, (int)mousePos.x, y);
+                int meshIndex = renderSystem.Raycast(raycastShader, camera, modelManager.meshes.size(), (int)mousePos.x, y);
                 
                 std::cout << "mesh index: " << meshIndex << std::endl; 
-                if (meshIndex >= 0 && meshIndex < gpu_memory.meshCount)
+                if (meshIndex >= 0 && meshIndex < modelManager.meshes.size())
                 {
                     gpu_memory.UpdateMeshMaterial(
                         modelManager.meshes[meshIndex], 
@@ -218,12 +217,12 @@ public:
 
             bool changedSettings = false;
             ImGui::Dummy(ImVec2(0, 0));
-            changedSettings |= DragFloatAttribute("Field of View", "FOV", "", 3, 3, &camera.fov, 0, 120);
-            changedSettings |= CheckboxAttribute("Depth of Field", "DOF", 3, 3, &camera.dof);
-            changedSettings |= DragFloatAttribute("Focus Distance", "FOCUS", "m", 3, 3, &camera.focus_distance, 0.1, 500);
-            changedSettings |= DragFloatAttribute("fStops", "fStops", "", 3, 3, &camera.fStop, 0.05f, 5.0f);
-            changedSettings |= CheckboxAttribute("Anti Aliasing", "AA", 3, 3, &camera.anti_aliasing);
-            changedSettings |= DragFloatAttribute("Exposure", "EXPOSURE", "", 3, 3, &camera.exposure, 0.0f, 3.0f, 0.01f);
+            changedSettings |= DragFloatAttribute("Field of View", "FOV", "", 3, &camera.fov, 0, 120);
+            changedSettings |= CheckboxAttribute("Depth of Field", "DOF", 3, &camera.dof);
+            changedSettings |= DragFloatAttribute("Focus Distance", "FOCUS", "m", 3, &camera.focus_distance, 0.01, 500);
+            changedSettings |= DragFloatAttribute("fStops", "fStops", "", 3, &camera.fStop, 0.05f, 5.0f);
+            changedSettings |= CheckboxAttribute("Anti Aliasing", "AA", 3, &camera.anti_aliasing);
+            changedSettings |= DragFloatAttribute("Exposure", "EXPOSURE", "", 3, &camera.exposure, 0.1f, 3.0f);
 
             if (IntAttribute("Light Bounces", "BOUNCES", 3, &renderSystem.bounces, 1, 10))
             {
@@ -297,9 +296,6 @@ public:
                         if (ImGui::Button(mesh->name.c_str(), ImVec2(SpaceX(), 0)))
                         {
                             selectedMesh = meshIndex;
-                            selectedDirectionalLight = -1;
-                            selectedPointLight = -1;
-                            selectedSpotlight = -1;
                         }
                         meshIndex++;
                         ImGui::PopID();
@@ -334,38 +330,29 @@ public:
         ImGui::BeginChild("Lights", ImVec2(0, height), true);
         PanelTitleBar("Lights");
 
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(GAP, 0)); 
-        ImGui::BeginChild("ADD LIGHTS CONTAINER", ImVec2(SpaceX() - GAP, 0), ImGuiChildFlags_AutoResizeY);
-        ImGui::Dummy(ImVec2(0, GAP)); 
-        ImGui::Dummy(ImVec2(0, 0)); ImGui::SameLine();
-        if (ImGui::Button("Dir", ImVec2(SpaceX() / 3.0f, 0)))
+        if (ImGui::Button("Add Directional Light", ImVec2(SpaceX(), 0)))
         {
             lightManager.AddDirectionalLight();
-            DirectionalLight& light = lightManager.directionalLights[lightManager.directionalLights.size()-1]; 
+            DirectionalLight& light = lightManager.directionalLights[lightManager.directionalLights.size()]; 
             gpu_memory.AddDirectionalLightToScene(light, lightManager.directionalLights.size());
             restartRender = true;
         }
 
-        ImGui::SameLine();
-        if (ImGui::Button("Point", ImVec2(SpaceX() * 0.5f, 0)))
+        if (ImGui::Button("Add Point Light", ImVec2(SpaceX(), 0)))
         {
             lightManager.AddPointLight();
-            PointLight& light = lightManager.pointLights[lightManager.pointLights.size()-1]; 
+            PointLight& light = lightManager.pointLights[lightManager.pointLights.size()]; 
             gpu_memory.AddPointLightToScene(light, lightManager.pointLights.size());
             restartRender = true;
         }
 
-        ImGui::SameLine();
-        if (ImGui::Button("Spot", ImVec2(SpaceX(), 0)))
+        if (ImGui::Button("Add Spotlight", ImVec2(SpaceX(), 0)))
         {
             lightManager.AddSpotlight();
-            Spotlight& light = lightManager.spotlights[lightManager.spotlights.size()-1]; 
+            Spotlight& light = lightManager.spotlights[lightManager.spotlights.size()]; 
             gpu_memory.AddSpotlightToScene(light, lightManager.spotlights.size());
             restartRender = true;
         }
-        ImGui::EndChild();
-        ImGui::PopStyleVar();
-
 
         // LIGHTS CONTAINER
         ImGui::Dummy(ImVec2(GAP, 0));
@@ -375,67 +362,80 @@ public:
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, GAP));
         for (int i=0; i<lightManager.directionalLights.size(); ++i)
         {
-            ImVec4 buttonColour = HexToRGBA(BUTTON);
-            if (selectedDirectionalLight == i) buttonColour = HexToRGBA(SELECTED);
-
             ImGui::PushID(i);
-            ImGui::PushStyleColor(ImGuiCol_Button, buttonColour);
             if (ImGui::Button(lightManager.directionalLightNames[i].c_str(), ImVec2(SpaceX(), 0)))
             {
-                selectedDirectionalLight = i;
-                selectedPointLight = -1;
-                selectedSpotlight = -1;
-                selectedMesh = -1;
+
             }
-            ImGui::PopStyleColor();
             ImGui::PopID();
         }
 
         for (int i=0; i<lightManager.pointLights.size(); ++i)
         {
-            ImVec4 buttonColour = HexToRGBA(BUTTON);
-            if (selectedPointLight == i) buttonColour = HexToRGBA(SELECTED);
-
             ImGui::PushID(i);
-            ImGui::PushStyleColor(ImGuiCol_Button, buttonColour);
             if (ImGui::Button(lightManager.pointLightNames[i].c_str(), ImVec2(SpaceX(), 0)))
             {
-                selectedDirectionalLight = -1;
-                selectedPointLight = i;
-                selectedSpotlight = -1;
-                selectedMesh = -1;
+
             }
-            ImGui::PopStyleColor();
             ImGui::PopID();
         }
 
         for (int i=0; i<lightManager.spotlights.size(); ++i)
         {
-            ImVec4 buttonColour = HexToRGBA(BUTTON);
-            if (selectedSpotlight == i) buttonColour = HexToRGBA(SELECTED);
-
             ImGui::PushID(i);
-            ImGui::PushStyleColor(ImGuiCol_Button, buttonColour);
             if (ImGui::Button(lightManager.spotlightNames[i].c_str(), ImVec2(SpaceX(), 0)))
             {
-                selectedDirectionalLight = -1;
-                selectedPointLight = i;
-                selectedSpotlight = -1;
-                selectedMesh = -1;
+                
             }
-            ImGui::PopStyleColor();
             ImGui::PopID();
         }
+        // int meshIndex = 0;
+        // for (int i=0; i<modelManager.modelInstances.size(); ++i)
+        // {
+        //     Model* model = modelManager.modelInstances[i].model;
+        //     if (model->inScene)
+        //     {   
+        //         // MODEL DROPDOWN
+        //         ImGui::PushID(i);
+        //         ImGui::PushStyleColor(ImGuiCol_Header, HexToRGBA(BORDER));
+        //         if (ImGui::CollapsingHeader(model->name, ImGuiTreeNodeFlags_DefaultOpen)) {
+        //             for (const Mesh* mesh : model->submeshPtrs)
+        //             {
+        //                 // BUTTON COLOUR
+        //                 ImVec4 buttonColour = HexToRGBA(BUTTON);
+        //                 if (selectedMesh == meshIndex) {
+        //                     buttonColour = HexToRGBA(SELECTED);
+        //                 }
+
+        //                 // MESH BUTTON
+        //                 ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
+        //                 std::string buttonID = "Mesh Button" + std::to_string(i);
+        //                 ImGui::PushID(buttonID.c_str());
+        //                 ImGui::PushStyleColor(ImGuiCol_Button, buttonColour);
+        //                 if (ImGui::Button(mesh->name.c_str(), ImVec2(SpaceX(), 0)))
+        //                 {
+        //                     selectedMesh = meshIndex;
+        //                 }
+        //                 meshIndex++;
+        //                 ImGui::PopID();
+        //                 ImGui::PopStyleVar();
+        //                 ImGui::PopStyleColor();
+        //             }
+        //         }
+        //         ImGui::PopID();
+        //         ImGui::PopStyleColor();
+        //     }
+        // }
         ImGui::PopStyleVar();
         ImGui::EndChild();
-        // LIGHTS CONTAINER
+        // OBJECTS CONTAINER
 
         ImGui::EndChild();
         ImGui::PopStyleColor(3);
         ImGui::PopStyleVar(2);
     }
 
-    void RenderTransformPanel(ModelManager& modelManager, LightManager& lightManager, GPU_Memory& gpu_memory, float height)
+    void RenderTransformPanel(ModelManager& modelManager, GPU_Memory& gpu_memory, float height)
     {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA("#000000"));
         ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
@@ -451,7 +451,6 @@ public:
         ImGui::Dummy(ImVec2(1, GAP));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, GAP));
         
-        // IF MESH IS SELECTED
         if (selectedMesh != -1)
         {
             Mesh* mesh = modelManager.meshes[selectedMesh];
@@ -463,93 +462,7 @@ public:
             restartRender |= changed;
 
             mesh->UpdateInverseTransformMat();
-            if (changed) gpu_memory.UpdateMeshTransform(mesh, selectedMesh);
-        }
-
-        // IF DIRECTIONAL LIGHT IS SELECTED
-        if (selectedDirectionalLight != -1)
-        {
-            DirectionalLight* light = &lightManager.directionalLights[selectedDirectionalLight];
-            bool changed = false;
-            changed |= TransformAttribute("rotation", GAP, &light->rotation.x, &light->rotation.y, &light->rotation.z); ImGui::Dummy(ImVec2(0, 0));
-            changed |= FloatAttribute("brightness", "##BRIGHTNESS", "", 3, 0, &light->brightness, 0, 1000);
-            
-            // LIGHT COLOUR SELECTION
-            bool colourButtonClicked = ColourButtonAttribute("colour", "###COLOUR", GAP, 0, &light->colour);
-            if (colourButtonClicked) lightColourPopupOpen = true;
-            if (lightColourPopupOpen)
-            {
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
-                ImGui::OpenPopup("Light Colour"); 
-                ImGui::BeginPopup("Light Colour");
-                ImGui::Text("%s", "Light Colour"); 
-                float col[3];
-                col[0] = light->colour.x;
-                col[1] = light->colour.y;
-                col[2] = light->colour.z;
-                ImGui::ColorPicker3("###Light Colour", col, ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview);
-                changed |= col[0] != light->colour.x;
-                changed |= col[1] != light->colour.y;
-                changed |= col[2] != light->colour.z;
-                light->colour.x = col[0];
-                light->colour.y = col[1];
-                light->colour.z = col[2];
-
-                if (!ImGui::IsAnyItemHovered() && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && ImGui::IsMouseClicked(0)) {
-                    lightColourPopupOpen = false;  // Close the popup if clicking outside
-                }
-
-                ImGui::EndPopup();
-                ImGui::PopStyleVar();
-            }
-
-            restartRender |= changed;
-
-
-            light->TransformDirection();
-            if (changed) gpu_memory.UpdateDirectionalLight(light, selectedDirectionalLight);
-        }
-
-        // IF POINT LIGHT IS SELECTED
-        if (selectedPointLight != -1)
-        {
-            PointLight* light = &lightManager.pointLights[selectedPointLight];
-            bool changed = false;
-            changed |= TransformAttribute("rotation", GAP, &light->position.x, &light->position.y, &light->position.z); ImGui::Dummy(ImVec2(0, 0));
-            changed |= FloatAttribute("brightness", "##BRIGHTNESS", "", 3, 0, &light->brightness, 0, 1000);
-            
-            // LIGHT COLOUR SELECTION
-            bool colourButtonClicked = ColourButtonAttribute("colour", "###COLOUR", GAP, 0, &light->colour);
-            if (colourButtonClicked) lightColourPopupOpen = true;
-            if (lightColourPopupOpen)
-            {
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
-                ImGui::OpenPopup("Light Colour"); 
-                ImGui::BeginPopup("Light Colour");
-                ImGui::Text("%s", "Light Colour"); 
-                float col[3];
-                col[0] = light->colour.x;
-                col[1] = light->colour.y;
-                col[2] = light->colour.z;
-                ImGui::ColorPicker3("###Light Colour", col, ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview);
-                changed |= col[0] != light->colour.x;
-                changed |= col[1] != light->colour.y;
-                changed |= col[2] != light->colour.z;
-                light->colour.x = col[0];
-                light->colour.y = col[1];
-                light->colour.z = col[2];
-
-                if (!ImGui::IsAnyItemHovered() && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && ImGui::IsMouseClicked(0)) {
-                    lightColourPopupOpen = false;  // Close the popup if clicking outside
-                }
-
-                ImGui::EndPopup();
-                ImGui::PopStyleVar();
-            }
-
-            restartRender |= changed;
-
-            if (changed) gpu_memory.UpdatePointLight(light, selectedPointLight);
+            gpu_memory.UpdateMeshTransform(mesh, selectedMesh);
         }
 
         ImGui::PopStyleVar();
@@ -659,54 +572,33 @@ public:
             MaterialData& materialData = materials[selectedMaterialIndex].data;
             std::string baseID = std::to_string(selectedMaterialIndex).c_str();
             PaddedText(materials[selectedMaterialIndex].name, 5);
-
-            // MATERIAL COLOUR PICKER
-            bool colourButtonClicked = ColourButtonAttribute("colour", "###COLOUR", GAP, 0, &materialData.colour);
-            if (colourButtonClicked) materialColourPopupOpen = true;
-            if (materialColourPopupOpen)
-            {
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
-                ImGui::OpenPopup("Material Colour"); 
-                ImGui::BeginPopup("Material Colour");
-                ImGui::Text("%s", "Material Colour"); 
-                float col[3];
-                col[0] = materialData.colour.x;
-                col[1] = materialData.colour.y;
-                col[2] = materialData.colour.z;
-                ImGui::ColorPicker3("###Material Colour", col, ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview);
-                updatedMaterial |= col[0] != materialData.colour.x;
-                updatedMaterial |= col[1] != materialData.colour.y;
-                updatedMaterial |= col[2] != materialData.colour.z;
-                materialData.colour.x = col[0];
-                materialData.colour.y = col[1];
-                materialData.colour.z = col[2];
-
-                if (!ImGui::IsAnyItemHovered() && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && ImGui::IsMouseClicked(0)) {
-                    materialColourPopupOpen = false;  
-                }
-
-                ImGui::EndPopup();
-                ImGui::PopStyleVar();
-            }
+            float col[3];
+            col[0] = materialData.colour.x;
+            col[1] = materialData.colour.y;
+            col[2] = materialData.colour.z;
+            ImGui::ColorPicker3("##HiddenLabel", col, ImGuiColorEditFlags_NoSidePreview);
+            updatedMaterial |= col[0] != materialData.colour.x;
+            updatedMaterial |= col[1] != materialData.colour.y;
+            updatedMaterial |= col[2] != materialData.colour.z;
+            materialData.colour.x = col[0];
+            materialData.colour.y = col[1];
+            materialData.colour.z = col[2];
             std::string roughnessID = std::string("Material Roughness") + baseID;
             std::string emissionID = std::string("Material Emission") + baseID;
             std::string refractiveID = std::string("Material Refractive") + baseID;
             std::string iorID = std::string("Material IOR") + baseID;
-            updatedMaterial |= DragFloatAttribute("roughness", roughnessID.c_str(), "", 3, 0, &materialData.roughness, 0, 1, 0.01f);
-            updatedMaterial |= DragFloatAttribute("emission", emissionID.c_str(), "", 3, 0, &materialData.emission, 0, 1000);
+            updatedMaterial |= DragFloatAttribute("roughness", roughnessID.c_str(), "", 3, &materialData.roughness, 0, 1);
+            updatedMaterial |= DragFloatAttribute("emission", emissionID.c_str(), "", 3, &materialData.emission, 0, 1000);
             bool refractive = materialData.refractive == 1;
-            updatedMaterial |= CheckboxAttribute("refractive", refractiveID.c_str(), 3, 0, &refractive);
-            updatedMaterial |= DragFloatAttribute("IOR", iorID.c_str(), "", 3, 0, &materialData.IOR, 0, 5);
+            updatedMaterial |= CheckboxAttribute("refractive", refractiveID.c_str(), 3, &refractive);
+            updatedMaterial |= DragFloatAttribute("IOR", iorID.c_str(), "", 3, &materialData.IOR, 0, 5);
 
             // HANDLE REFRACTIVE NON BOOL CASE
             if (refractive) materialData.refractive = 1;
             else materialData.refractive = 0;
 
-            ImGui::Dummy(ImVec2(0, 0)); ImGui::SameLine();
             MaterialTextureSlot("Albedo Map", materials[selectedMaterialIndex], textures, 0, updatedMaterial);
-            ImGui::Dummy(ImVec2(0, 0)); ImGui::SameLine();
             MaterialTextureSlot("Normal Map", materials[selectedMaterialIndex], textures, 1, updatedMaterial);
-            ImGui::Dummy(ImVec2(0, 0)); ImGui::SameLine();
             MaterialTextureSlot("Roughness Map", materials[selectedMaterialIndex], textures, 2, updatedMaterial);
 
 
@@ -812,11 +704,6 @@ private:
 
     // TRANSFORM PANEL CONTROLS
     int selectedMesh = -1;
-    int selectedDirectionalLight = -1;
-    int selectedPointLight = -1;
-    int selectedSpotlight = -1;
-    bool lightColourPopupOpen = false;
-    bool materialColourPopupOpen = false;
 
     // ADAPTED FROM Tor Klingberg https://stackoverflow.com/questions/3723846/convert-from-hex-color-to-rgb-struct-in-c
     ImVec4 HexToRGBA(const char* hex)
@@ -853,17 +740,17 @@ private:
         ImGui::Unindent(padding);
     }
 
-    bool FloatAttribute(std::string label, const char* id, const char* suffix, float padding, float margin, float* value, float min, float max)
+    bool FloatAttribute(std::string label, const char* id, const char* suffix, float padding, float* value)
     {
         bool changed = false;
         std::string frameID = "###" + std::string(id);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(ATTRIBUTE_BG));
         ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(INPUT_BG));
 
-        ImGui::Dummy(ImVec2(margin, 1)); 
+        ImGui::Dummy(ImVec2(padding, 1)); 
         ImGui::SameLine();
 
-        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX() - margin, 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX() - padding, 0), ImGuiChildFlags_AutoResizeY);
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
         std::string uniqueID = "##" + std::string(id);
         std::string format = "%.2f" + std::string(suffix);
@@ -875,8 +762,6 @@ private:
 
         float tempValue = *value;
         ImGui::InputFloat(uniqueID.c_str(), &tempValue, 0, 0, format.c_str());
-        if (tempValue < min) tempValue = min;
-        else if (tempValue > max) tempValue = max;
         if (ImGui::IsItemDeactivatedAfterEdit())
         {
             changed = *value != tempValue; 
@@ -891,17 +776,17 @@ private:
         return changed;
     }
 
-    bool DragFloatAttribute(std::string label, const char* id, const char* suffix, float padding, float margin, float* value, float min, float max, float step=0.1f)
+    bool DragFloatAttribute(std::string label, const char* id, const char* suffix, float padding, float* value, float min, float max)
     {
         bool changed = false;
         std::string frameID = "###" + std::string(id);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(ATTRIBUTE_BG));
         ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(INPUT_BG));
 
-        ImGui::Dummy(ImVec2(margin, 1));
+        ImGui::Dummy(ImVec2(padding, 1));
         ImGui::SameLine();
 
-        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX() - margin, 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX() - padding, 0), ImGuiChildFlags_AutoResizeY);
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
         std::string uniqueID = "##" + std::string(id);
         std::string format = "%.2f" + std::string(suffix);
@@ -912,7 +797,7 @@ private:
         ImGui::PushItemWidth(100);
 
         float tempValue = *value;
-        ImGui::DragFloat(uniqueID.c_str(), &tempValue, step, min, max);
+        ImGui::DragFloat(uniqueID.c_str(), &tempValue, 0.1f, min, max);
         changed = *value != tempValue; 
         *value = tempValue; 
         ImGui::PopItemWidth();
@@ -991,48 +876,17 @@ private:
         return changed;
     }
 
-    bool ColourButtonAttribute(std::string label, const char* id, float padding, float margin, glm::vec3* colour)
+    bool CheckboxAttribute(std::string label, const char* id, float padding, bool* value)
     {
         bool changed = false;
         std::string frameID = "###" + std::string(id);
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(ATTRIBUTE_BG));
         ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(INPUT_BG));
 
-        ImGui::Dummy(ImVec2(margin, 1));
+        ImGui::Dummy(ImVec2(padding, 1)); 
         ImGui::SameLine();
 
-        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX() - margin, 0), ImGuiChildFlags_AutoResizeY);
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-        std::string uniqueID = "##" + std::string(id);
-        ImGui::Dummy(ImVec2(1, padding));
-        ImGui::Indent(padding); 
-        ImGui::Text("%s", label.c_str());   
-        ImGui::SameLine(SpaceX() - 100); 
-        ImGui::PushItemWidth(100);
-
-
-        ImVec4 col(colour->x, colour->y, colour->z, 1);
-        bool clicked = ImGui::ColorButton(id, col, 0, ImVec2(100, 0));
-        ImGui::PopItemWidth();
-        ImGui::Unindent(padding); 
-        ImGui::Dummy(ImVec2(1, padding)); 
-        ImGui::PopStyleVar();
-        ImGui::EndChild();
-        ImGui::PopStyleColor(2);
-        return clicked;
-    }
-
-    bool CheckboxAttribute(std::string label, const char* id, float padding, float margin, bool* value)
-    {
-        bool changed = false;
-        std::string frameID = "###" + std::string(id);
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(ATTRIBUTE_BG));
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(INPUT_BG));
-
-        ImGui::Dummy(ImVec2(margin, 1)); 
-        ImGui::SameLine();
-
-        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX() - margin, 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX() - padding, 0), ImGuiChildFlags_AutoResizeY);
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
         std::string uniqueID = "##" + std::string(id);
         ImGui::Dummy(ImVec2(1, padding)); // VERTICAL PADDING

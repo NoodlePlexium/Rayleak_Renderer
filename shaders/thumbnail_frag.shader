@@ -33,7 +33,7 @@ void main()
     vec3 normal = normalize(FragPos);
 
     // AMBIENT LIGHT
-    vec3 ambientLight = vec3(0.5, 0.7, 0.95) * 0.2;
+    vec3 ambientLight = vec3(0.5, 0.7, 0.95) * 0.5;
 
     vec3 lighting = lightColour * max(dot(normal, dirToLight), 0) + ambientLight;
 

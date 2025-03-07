@@ -29,7 +29,6 @@ struct Material
 struct DirectionalLight
 {
     vec3 direction;
-    vec3 rotation;
     vec3 colour;
     float brightness;
 };
@@ -457,7 +456,7 @@ bool ShadowCast(Ray ray, vec3 lightPos)
     bool inShadow = false;
     
     // FOR EACH MESH
-    for (int m=0; m<u_meshCount; m++) 
+    for (int m=0; m<u_meshCount && !inShadow; m++) 
     {
         uint indicesStart = meshPartitions[m].indicesStart;
         uint verticesStart = meshPartitions[m].verticesStart;
@@ -527,7 +526,7 @@ vec3 DirectionalLightContribution(vec3 position, vec3 normal, float roughness, u
     vec3 light = vec3(0.0f, 0.0f, 0.0f);
     for (int d=0; d<u_directionalLightCount; d++)
     {
-        float random = Random(seed + d);
+        float random = Random(seed + d * 34637334);
         bool sampleLight = subSample == false || u_directionalLightCount == 1 || random < 1.0f / float(u_directionalLightCount);
         if (subSample) bias = u_directionalLightCount;
         if (sampleLight)
@@ -561,7 +560,7 @@ vec3 PointLightContribution(vec3 position, vec3 normal, float roughness, uint se
     vec3 totalLight = vec3(0.0f, 0.0f, 0.0f);
     for (int p=0; p<u_pointLightCount; p++)
     {
-        float random = Random(seed + p);
+        float random = Random(seed + p * 95674354);
         bool sampleLight = subSample == false || u_pointLightCount == 1 || random < 1.0f / float(u_pointLightCount);
         if (subSample) bias = u_pointLightCount;
         if (sampleLight)
@@ -599,7 +598,7 @@ vec3 SpotlightContribution(vec3 position, vec3 normal, float roughness, uint see
     vec3 light = vec3(0.0f, 0.0f, 0.0f);
     for (int s=0; s<u_spotlightCount; s++)
     {
-        float random = Random(seed + s);
+        float random = Random(seed + s * 5231912);
         bool sampleLight = subSample == false || u_spotlightCount == 1 || random < 1.0f / float(u_spotlightCount);
         if (subSample) bias = u_spotlightCount;
         if (sampleLight)
@@ -874,7 +873,6 @@ void main()
     // TRACE CAMERA TO GET PIXEL COLOUR
     int pathSegments = GeneratePath(camRay, u_bounces, pixelIndex, seed);
     vec3 colour = EvaluatePath(pathSegments, u_bounces, pixelIndex, seed) * cameraInfo.exposure;
-
 
     // FRAME ACCUMULATION
     vec4 oldAvg = imageLoad(renderImage, ivec2(pX, pY)); 

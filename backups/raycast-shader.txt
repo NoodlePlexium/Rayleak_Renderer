@@ -181,7 +181,7 @@ RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3)
 int Raycast(Ray ray)
 {   
     float hitDist = 100000.0f;
-    int meshIndex = -1;
+    int meshPartition = -1;
 
     // FOR EACH MESH
     for (int m=0; m<u_meshCount; m++) 
@@ -242,13 +242,13 @@ int Raycast(Ray ray)
                     if (hit.dist < hitDist) 
                     {
                         hitDist = hit.dist;
-                        meshIndex = m;
+                        meshPartition = m;
                     }
                 }
             }
         }
     }
-    return meshIndex;
+    return meshPartition;
 }
 
 void main()

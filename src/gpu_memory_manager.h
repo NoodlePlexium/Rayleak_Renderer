@@ -2,6 +2,7 @@
 
 // EXTERNAL LIBRARIES
 #include <GL/glew.h>
+#include "glm/gtc/type_ptr.hpp"
 
 // STANDARD LIBRARY
 #include <vector>
@@ -78,31 +79,30 @@ private:
     uint32_t bufferSize;
 };
 
-class ModelManager
+class GPU_Memory
 {
 public:
 
-    ModelManager(unsigned int _pathtraceShader) : 
+    GPU_Memory(unsigned int _pathtraceShader) : 
         pathtraceShader(_pathtraceShader),
         VertexBuffer(DynamicStorageBuffer(2, 0)),
         IndexBuffer(DynamicStorageBuffer(3, 0)),
         MaterialBuffer(DynamicStorageBuffer(4, 0)),
         BvhBuffer(DynamicStorageBuffer(5, 0)),
         PartitionBuffer(DynamicStorageBuffer(6, 0)),
-        DirectionalLightBuffer(DynamicStorageBuffer(8, 0)),
-        PointLightBuffer(DynamicStorageBuffer(9, 0)),
-        SpotlightBuffer(DynamicStorageBuffer(10, 0)),
+        DirectionalLightBuffer(DynamicStorageBuffer(7, 0)),
+        PointLightBuffer(DynamicStorageBuffer(8, 0)),
+        SpotlightBuffer(DynamicStorageBuffer(9, 0)),
         meshCount(0)
     {
 
     }
 
-    void AddModelToScene(Model& model)
+    void AddModelToScene(Model* model)
     {
         glUseProgram(pathtraceShader);
-
-        model.inScene = true;
-        meshCount += model.submeshPtrs.size();
+        model->inScene = true;
+        meshCount += model->submeshPtrs.size();
         glUniform1i(glGetUniformLocation(pathtraceShader, "u_meshCount"), meshCount);
         
 
@@ -110,9 +110,9 @@ public:
         uint32_t appendVertexBufferSize = 0;
         uint32_t appendIndexBufferSize = 0;
         uint32_t appendBvhBufferSize = 0;
-        uint32_t appendPartitionBufferSize = model.submeshPtrs.size() * sizeof(MeshPartition);
+        uint32_t appendPartitionBufferSize = model->submeshPtrs.size() * sizeof(MeshPartition);
         std::vector<MeshPartition> meshPartitions;
-        for (Mesh* mesh : model.submeshPtrs) 
+        for (Mesh* mesh : model->submeshPtrs) 
         {
             // CREATE NEW MESH PARTITION
             MeshPartition mPart;
@@ -120,7 +120,8 @@ public:
             mPart.indicesStart = indexStart;
             mPart.materialIndex = mesh->materialIndex;
             mPart.bvhNodeStart = bvhStart;
-            mPart.inverseTransform = mesh->GetInverseTransformMat();
+            mesh->UpdateInverseTransformMat();
+            mPart.inverseTransform = mesh->inverseTransform;
             vertexStart += mesh->vertices.size();
             indexStart += mesh->indices.size();
             bvhStart += mesh->nodesUsed;
@@ -149,7 +150,7 @@ public:
         uint32_t indexOffset = 0;
         uint32_t bvhOffset = 0;
         uint32_t partitionOffset = 0;
-        for (const Mesh* mesh : model.submeshPtrs) 
+        for (const Mesh* mesh : model->submeshPtrs) 
         {
             memcpy((char*)mappedVertexBuffer + vertexOffset, mesh->vertices.data(), mesh->vertices.size() * sizeof(Vertex));
             memcpy((char*)mappedIndexBuffer + indexOffset, mesh->indices.data(), mesh->indices.size() * sizeof(uint32_t));
@@ -192,6 +193,8 @@ public:
 
     void AddDirectionalLightToScene(DirectionalLight& directionalLight, size_t directionalLightCount)
     {
+        glUseProgram(pathtraceShader);
+
         // GET DIRECTIONAL LIGHT SIZE
         uint32_t directionalLightSize = sizeof(DirectionalLight);
 
@@ -213,6 +216,8 @@ public:
 
     void AddPointLightToScene(PointLight& pointLight, size_t pointLightCount)
     {
+        glUseProgram(pathtraceShader);
+
         // GET DIRECTIONAL LIGHT SIZE
         uint32_t pointLightSize = sizeof(PointLight);
 
@@ -234,6 +239,8 @@ public:
 
     void AddSpotlightToScene(Spotlight& spotlight, size_t spotlightCount)
     {
+        glUseProgram(pathtraceShader);
+        
         // GET DIRECTIONAL LIGHT SIZE
         uint32_t spotlightSize = sizeof(Spotlight);
 
@@ -251,6 +258,42 @@ public:
 
         // UPDATE UNIFORM
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_spotlightCount"), spotlightCount);
+    }
+
+    void UpdateDirectionalLight(DirectionalLight* light, int lightIndex)
+    {
+        // GET LIGHT SIZE
+        uint32_t lightDataSize = sizeof(DirectionalLight);
+
+        // GET LIGHT BUFFER OFFSET
+        uint32_t bufferOffset = lightIndex * lightDataSize;
+
+        // GET MAPPED LIGHT BUFFER
+        void* mappedLightBuffer = DirectionalLightBuffer.GetMappedBuffer(bufferOffset, lightDataSize);
+
+        // COPY UPDATED LIGHT DATA TO THE GPU
+        memcpy((char*)mappedLightBuffer, light, lightDataSize);
+
+        // UNMAP BUFFER
+        DirectionalLightBuffer.UnmapBuffer();
+    }
+
+    void UpdatePointLight(PointLight* light, int lightIndex)
+    {
+        // GET LIGHT SIZE
+        uint32_t lightDataSize = sizeof(PointLight);
+
+        // GET LIGHT BUFFER OFFSET
+        uint32_t bufferOffset = lightIndex * lightDataSize;
+
+        // GET MAPPED LIGHT BUFFER
+        void* mappedLightBuffer = PointLightBuffer.GetMappedBuffer(bufferOffset, lightDataSize);
+
+        // COPY UPDATED LIGHT DATA TO THE GPU
+        memcpy((char*)mappedLightBuffer, light, lightDataSize);
+
+        // UNMAP BUFFER
+        PointLightBuffer.UnmapBuffer();
     }
 
     void UpdateMaterial(MaterialData& materialData, int materialIndex)
@@ -289,6 +332,23 @@ public:
         PartitionBuffer.UnmapBuffer();
     }
 
+    void UpdateMeshTransform(Mesh* mesh, uint32_t meshIndex)
+    {
+        // CALCULATE BUFFER OFFSET
+        uint32_t bufferOffset = meshIndex * sizeof(MeshPartition) + 4 * sizeof(uint32_t);
+
+        // GET MAPPED BUFFER
+        void* mappedPartitionBuffer = PartitionBuffer.GetMappedBuffer(bufferOffset, sizeof(glm::mat4));
+
+        // COPY NEW PARTITION BUFFER DATA
+        memcpy((char*)mappedPartitionBuffer, glm::value_ptr(mesh->inverseTransform), sizeof(glm::mat4));
+
+        // UNMAP BUFFER
+        PartitionBuffer.UnmapBuffer();
+    }
+
+    int meshCount;
+
 private:
 
     DynamicStorageBuffer VertexBuffer;
@@ -304,7 +364,6 @@ private:
     uint32_t indexStart = 0;
     uint32_t bvhStart = 0;
     uint32_t materialStart = 0;
-    int meshCount;
 
     unsigned int pathtraceShader;
 };

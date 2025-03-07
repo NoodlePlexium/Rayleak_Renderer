@@ -60,7 +60,7 @@ struct RayHit
 
 struct RaycastHit
 {
-    int partitionIndex;
+    int meshIndex;
 };
 
 layout(binding = 2) readonly buffer VertexBuffer {
@@ -79,7 +79,7 @@ layout(binding = 6) readonly buffer PartitionBuffer {
     MeshPartition meshPartitions[];
 };
 
-layout(binding = 13) buffer RaycastBuffer {
+layout(binding = 11) buffer RaycastBuffer {
     RaycastHit raycastHit[];
 };
 
@@ -114,7 +114,7 @@ vec3 PixelRayPos(int x, int y)
     vec3 localPoint = localBL + vec3(planeWidth * nx, planeHeight * ny, 0.0f);
 
     // CALCULATE PIXEL COORDINATE IN WORLD SPACE
-    vec3 worldPoint = cameraInfo.pos + cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
+    vec3 worldPoint = cameraInfo.pos - cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
     return worldPoint;
 }
 
@@ -131,17 +131,13 @@ float IntersectAABB(Ray ray, vec3 aabbMin, vec3 aabbMax)
     return hit ? distNear : 100000.0f;
 }
 
-RayHit RayTriangle(Ray ray, uint v1_index, uint v2_index, uint v3_index)
+RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3)
 {
-    const Vertex v1 = vertices[v1_index];
-    const Vertex v2 = vertices[v2_index];
-    const Vertex v3 = vertices[v3_index];
-
     // DEFAULT RAY HIT
     RayHit hit;
     hit.pos = vec3(0.0f, 0.0f, 0.0f);
     hit.normal = vec3(0.0f, 0.0f, 0.0f);
-    hit.dist = 100000.0f;
+    hit.dist = 10000000.0f;
     hit.hit = false;
 
     // CALCULATE THE DETERMINANT
@@ -184,8 +180,8 @@ RayHit RayTriangle(Ray ray, uint v1_index, uint v2_index, uint v3_index)
 
 int Raycast(Ray ray)
 {   
-    float hitDist = 10000000.0f;
-    int meshPartition = -1;
+    float hitDist = 100000.0f;
+    int meshIndex = -1;
 
     // FOR EACH MESH
     for (int m=0; m<u_meshCount; m++) 
@@ -239,20 +235,20 @@ int Raycast(Ray ray)
                     uint v3_index = verticesStart + indices[index + 2];
                     RayHit hit = RayTriangle(
                         transformedRay, 
-                        v1_index, 
-                        v2_index, 
-                        v3_index
+                        vertices[v1_index], 
+                        vertices[v2_index], 
+                        vertices[v3_index]
                     );
                     if (hit.dist < hitDist) 
                     {
                         hitDist = hit.dist;
-                        meshPartition = m;
+                        meshIndex = m;
                     }
                 }
             }
         }
     }
-    return meshPartition;
+    return meshIndex;
 }
 
 void main()
@@ -263,6 +259,6 @@ void main()
     camRay.dir = normalize(camRay.origin - cameraInfo.pos);
 
     // PERFORM THE RAYCAST
-    raycastHit[0].partitionIndex = Raycast(camRay);
+    raycastHit[0].meshIndex = Raycast(camRay);
 }
 

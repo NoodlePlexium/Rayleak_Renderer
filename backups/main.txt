@@ -118,88 +118,6 @@ int main()
     gpu_memory.AddMaterialToScene(materials[0].data);
     // }----------{ SEND MESH DATA TO THE GPU }----------{
 
-    // // }----------{ SEND LIGHT DATA TO THE GPU }----------{
-    //     DirectionalLight sun;
-    //     sun.brightness = 2.5f;
-    //     std::vector<DirectionalLight> directionalLights;
-    //     directionalLights.push_back(sun);
-    
-    
-    
-    //     PointLight pLight;
-    //     pLight.colour = glm::vec3(1.0f, 1.0f, 1.0f);
-    //     pLight.position = glm::vec3(-3.5f, 6.0f, 0.0f);
-    //     pLight.brightness = 3.0f;
-    
-    //     PointLight pLight1;
-    //     pLight1.colour = glm::vec3(1.0f, 1.0f, 1.0f);
-    //     pLight1.position = glm::vec3(-3.5f, 6.0f, 5.0f);
-    //     pLight1.brightness = 3.0f;
-    
-    //     PointLight pLight2;
-    //     pLight2.colour = glm::vec3(1.0f, 1.0f, 1.0f);
-    //     pLight2.position = glm::vec3(-3.5f, 6.0f, -5.0f);
-    //     pLight2.brightness = 3.0f;
-    
-    
-    
-    //     PointLight pLight3;
-    //     pLight3.colour = glm::vec3(1.0f, 1.0f, 1.0f);
-    //     pLight3.position = glm::vec3(3.5f, 6.0f, 0.0f);
-    //     pLight3.brightness = 3.0f;
-    
-    //     PointLight pLight4;
-    //     pLight4.colour = glm::vec3(1.0f, 1.0f, 1.0f);
-    //     pLight4.position = glm::vec3(3.5f, 6.0f, 5.0f);
-    //     pLight4.brightness = 3.0f;
-    
-    //     PointLight pLight5;
-    //     pLight5.colour = glm::vec3(1.0f, 1.0f, 1.0f);
-    //     pLight5.position = glm::vec3(3.5f, 6.0f, -5.0f);
-    //     pLight5.brightness = 3.0f;
-    
-    //     std::vector<PointLight> pointLights;
-    //     pointLights.push_back(pLight);
-    //     pointLights.push_back(pLight1);
-    //     pointLights.push_back(pLight2);
-    
-    //     pointLights.push_back(pLight3);
-    //     pointLights.push_back(pLight4);
-    //     pointLights.push_back(pLight5);
-    
-    //     std::vector<Spotlight> spotlights;
-    //     Spotlight spotlight;
-    //     spotlight.brightness = 5.0f;
-    //     spotlight.colour = glm::vec3(1.0f, 0.1f, 0.1f);
-    //     spotlight.position = glm::vec3(1.0f, 3.5f, 0.0f);
-    //     spotlight.angle = 90.0f;
-    //     spotlight.falloff = 10.0f;
-    //     spotlights.push_back(spotlight);
-    
-    
-    //     Spotlight spotlight2;
-    //     spotlight2.brightness = 5.0f;
-    //     spotlight2.colour = glm::vec3(0.0f, 1.0f, 0.0f);
-    //     spotlight2.position = glm::vec3(1.0f, 3.5f, 0.0f);
-    //     spotlight2.angle = 10.0f;
-    //     spotlight2.falloff = 0.001f;
-    //     spotlights.push_back(spotlight2);
-        
-    //     for (int i=0; i<directionalLights.size(); i++)
-    //     {
-    //         gpu_memory.AddDirectionalLightToScene(directionalLights[i], directionalLights.size());
-    //     }
-    //     for (int i=0; i<pointLights.size(); i++)
-    //     {
-    //         gpu_memory.AddPointLightToScene(pointLights[i], pointLights.size());
-    //     }
-    //     for (int i=0; i<spotlights.size(); i++)
-    //     {
-    //         gpu_memory.AddSpotlightToScene(spotlights[i], spotlights.size());
-    //     }
-    //     // }----------{ SEND LIGHT DATA TO THE GPU }----------{
-    
-
 
 
     // }----------{ APPLICATION LOOP }----------{
@@ -358,9 +276,10 @@ int main()
         float remainingHeight = VIEWPORT_HEIGHT - transformPanelHeight;  
         float objectsPanelHeight = remainingHeight * 0.5f;  
         float lightsPanelHeight = remainingHeight * 0.5f;  
-        UI.RenderObjectsPanel(modelManager, gpu_memory, objectsPanelHeight);
-        UI.RenderLightsPanel(lightManager, gpu_memory, lightsPanelHeight);
-        UI.RenderTransformPanel(modelManager, lightManager, gpu_memory, transformPanelHeight);
+        UI.RenderTransformPanel(modelManager, gpu_memory);
+        UI.RenderObjectsPanel(modelManager, gpu_memory);
+        UI.RenderLightsPanel(lightManager, gpu_memory);
+
         UI.EndSidebar();
 
         ImGui::Dummy(ImVec2(1, 0));

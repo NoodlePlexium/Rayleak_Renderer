@@ -29,6 +29,7 @@ struct Material
 struct DirectionalLight
 {
     vec3 direction;
+    vec3 rotation;
     vec3 colour;
     float brightness;
 };
@@ -138,23 +139,19 @@ layout(binding = 6) readonly buffer PartitionBuffer {
     MeshPartition meshPartitions[];
 };
 
-layout(binding = 7) readonly buffer EmissiveBuffer {
-    EmissiveTriangle emissiveTriangles[];
-};
-
-layout(binding = 8) readonly buffer DirectionalLightBuffer {
+layout(binding = 7) readonly buffer DirectionalLightBuffer {
     DirectionalLight directionalLights[];
 };
 
-layout(binding = 9) readonly buffer PointLightBuffer {
+layout(binding = 8) readonly buffer PointLightBuffer {
     PointLight pointLights[];
 };
 
-layout(binding = 10) readonly buffer SpotlightLightBuffer {
+layout(binding = 9) readonly buffer SpotlightLightBuffer {
     Spotlight spotlights[];
 };
 
-layout(binding = 11) buffer CameraPathVertexBuffer {
+layout(binding = 10) buffer CameraPathVertexBuffer {
     PathVertex cameraPathVertices[];
 };
 
@@ -243,27 +240,6 @@ float CosineInterpolation(float min, float max, float value)
     return cos(radians);
 }
 
-vec3 BarycentricNormal(uint v1_index, uint v2_index, uint v3_index, vec3 pos, float area)
-{
-    const Vertex v1 = vertices[v1_index];
-    const Vertex v2 = vertices[v2_index];
-    const Vertex v3 = vertices[v3_index];
-
-    vec3 v1v2 = v2.pos - v1.pos;
-    vec3 v1v3 = v3.pos - v1.pos;
-    vec3 v1pos = pos - v1.pos;
-    
-    float v1_pos_v2_area = length(cross(v1v2, v1pos)) * 0.5f;
-    float v1_pos_v3_area = length(cross(v1v3, v1pos)) * 0.5f;
-
-    float w = v1_pos_v2_area / area;
-    float v = v1_pos_v3_area / area;
-    float u = area - w - v;
-
-    vec3 normal = normalize(v1.normal * u + v2.normal * v + v3.normal * w);
-    return normal;
-}
-
 // adapted from https://jacco.ompf2.com/2022/04/13/how-to-build-a-bvh-part-1-basics/
 float IntersectAABB(Ray ray, vec3 aabbMin, vec3 aabbMax)
 {
@@ -296,7 +272,7 @@ RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3)
     RayHit hit;
     hit.pos = vec3(0.0f, 0.0f, 0.0f);
     hit.normal = vec3(0.0f, 0.0f, 0.0f);
-    hit.dist = 100000.0f;
+    hit.dist = 10000000.0f;
     hit.hit = false;
 
     // CALCULATE THE DETERMINANT
@@ -326,7 +302,7 @@ RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3)
 
     // SET AND RETURN THE HIT INFORMATION
     hit.pos = ray.origin + ray.dir * dist;
-    vec3 normal = normalize(v1.normal * w + v2.normal * u + v3.normal * v); // INTERPOLATE NORMAL USING BARYCENTRIC COORDINATES
+    vec3 normal = normalize(v1.normal * w + v2.normal * u + v3.normal * v);  // INTERPOLATE NORMAL USING BARYCENTRIC COORDINATES
     vec3 faceNormal = normalize(cross(edge1, edge2));
 
     // Calculate UV differences
@@ -381,7 +357,7 @@ float SchlicksReflectionProbability(vec3 inDir, vec3 normal, float IOR)
 RayHit CastRay(Ray ray)
 {   
     RayHit hit;
-    hit.dist = 10000000.0f;
+    hit.dist = 100000.0f;
     hit.hit = false;
 
     mat4x4 inverseModelTransform;
@@ -481,7 +457,7 @@ bool ShadowCast(Ray ray, vec3 lightPos)
     bool inShadow = false;
     
     // FOR EACH MESH
-    for (int m=0; m<u_meshCount && !inShadow; m++) 
+    for (int m=0; m<u_meshCount; m++) 
     {
         uint indicesStart = meshPartitions[m].indicesStart;
         uint verticesStart = meshPartitions[m].verticesStart;
@@ -551,7 +527,7 @@ vec3 DirectionalLightContribution(vec3 position, vec3 normal, float roughness, u
     vec3 light = vec3(0.0f, 0.0f, 0.0f);
     for (int d=0; d<u_directionalLightCount; d++)
     {
-        float random = Random(seed + d * 34637334);
+        float random = Random(seed + d);
         bool sampleLight = subSample == false || u_directionalLightCount == 1 || random < 1.0f / float(u_directionalLightCount);
         if (subSample) bias = u_directionalLightCount;
         if (sampleLight)
@@ -562,7 +538,7 @@ vec3 DirectionalLightContribution(vec3 position, vec3 normal, float roughness, u
 
             Ray shadowRay;
             shadowRay.dir = -directionalLights[d].direction;
-            shadowRay.origin = position + shadowRay.dir * 0.0001f;
+            shadowRay.origin = position + normal * 0.00001f; 
             vec3 lightPosition = shadowRay.origin + shadowRay.dir * 5000.0f;
             bool inShadow = ShadowCast(shadowRay, lightPosition); 
             if (!inShadow)
@@ -585,7 +561,7 @@ vec3 PointLightContribution(vec3 position, vec3 normal, float roughness, uint se
     vec3 totalLight = vec3(0.0f, 0.0f, 0.0f);
     for (int p=0; p<u_pointLightCount; p++)
     {
-        float random = Random(seed + p * 95674354);
+        float random = Random(seed + p);
         bool sampleLight = subSample == false || u_pointLightCount == 1 || random < 1.0f / float(u_pointLightCount);
         if (subSample) bias = u_pointLightCount;
         if (sampleLight)
@@ -597,7 +573,7 @@ vec3 PointLightContribution(vec3 position, vec3 normal, float roughness, uint se
             if (dot(normal, shadowRay.dir) < 0.0f)
                 continue;
     
-                shadowRay.origin = position + shadowRay.dir * 0.0001f; 
+                shadowRay.origin = position + normal * 0.00001f; 
             bool inShadow = ShadowCast(shadowRay, pointLights[p].position);
             if (!inShadow)
             {
@@ -623,7 +599,7 @@ vec3 SpotlightContribution(vec3 position, vec3 normal, float roughness, uint see
     vec3 light = vec3(0.0f, 0.0f, 0.0f);
     for (int s=0; s<u_spotlightCount; s++)
     {
-        float random = Random(seed + s * 5231912);
+        float random = Random(seed + s);
         bool sampleLight = subSample == false || u_spotlightCount == 1 || random < 1.0f / float(u_spotlightCount);
         if (subSample) bias = u_spotlightCount;
         if (sampleLight)
@@ -635,7 +611,7 @@ vec3 SpotlightContribution(vec3 position, vec3 normal, float roughness, uint see
             if (dot(normal, shadowRay.dir) < 0.0f)
             continue;
 
-            shadowRay.origin = position + shadowRay.dir * 0.0001f;
+            shadowRay.origin = position + normal * 0.00001f; 
             vec3 dirFromSpotlight = normalize(shadowRay.origin - spotlights[s].position);
 
             // ANGLE BETWEEN SPOTLIGHT DIRECTION AND DIRECTION OF LIGHT
@@ -743,8 +719,8 @@ int GeneratePath(Ray ray, uint bounces, uint pixelIndex, uint seed)
                         cameraPathVertices[pathIndex + b].refracted = 1;
                         vec3 refractDir = Refract(-ray.dir, hit.normal, eta, cosTheta);
                         vec3 roughRefractDir = RandomHemisphereDirectionCosine(refractDir, seed + b);
+                        ray.origin = hit.pos - hit.normal * 0.00001f;
                         ray.dir = normalize(roughRefractDir * roughness + refractDir * (1.0f - roughness));
-                        ray.origin = hit.pos + ray.dir * 0.0001f;
                     }
                 }
             }
@@ -755,8 +731,8 @@ int GeneratePath(Ray ray, uint bounces, uint pixelIndex, uint seed)
                 float roughness = cameraPathVertices[pathIndex + b].surfaceRoughness;
                 vec3 diffuseDir = RandomHemisphereDirectionCosine(hit.normal, seed + b);
                 vec3 specularDir = ray.dir - hit.normal * 2.0f * dot(ray.dir, hit.normal);
+                ray.origin = hit.pos - ray.dir * 0.00001f; 
                 ray.dir = normalize(diffuseDir * roughness + specularDir * (1.0f - roughness)); 
-                ray.origin = hit.pos + ray.dir * 0.0001f; 
             }
         }
         else
@@ -779,7 +755,7 @@ vec3 EvaluatePath(int segments, uint bounces, uint pixelIndex, uint seed)
     {
         if (cameraPathVertices[pathIndex + i].hitSky == 1)
         {
-            // light += vec3(0.5f, 0.7f, 0.95f) * 2.0f;
+            light += vec3(0.5f, 0.7f, 0.95f) * 2.0f;
             continue;
         }
 
@@ -844,7 +820,7 @@ vec3 PixelRayPos(uint x, uint y, uint width, uint height, uint seed, bool antiAl
     vec3 localPoint = localBL + vec3(planeWidth * nx, planeHeight * ny, 0.0f);
 
     // CALCULATE PIXEL COORDINATE IN WORLD SPACE
-    vec3 worldPoint = cameraInfo.pos + cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
+    vec3 worldPoint = cameraInfo.pos - cameraInfo.right * localPoint.x + cameraInfo.up * localPoint.y + cameraInfo.forward * localPoint.z;
     return worldPoint;
 }
 
@@ -898,7 +874,7 @@ void main()
     // TRACE CAMERA TO GET PIXEL COLOUR
     int pathSegments = GeneratePath(camRay, u_bounces, pixelIndex, seed);
     vec3 colour = EvaluatePath(pathSegments, u_bounces, pixelIndex, seed) * cameraInfo.exposure;
-    // vec3 colour = Test(camRay, u_bounces, pixelIndex, seed);
+
 
     // FRAME ACCUMULATION
     vec4 oldAvg = imageLoad(renderImage, ivec2(pX, pY)); 

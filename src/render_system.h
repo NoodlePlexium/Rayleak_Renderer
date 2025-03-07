@@ -15,8 +15,9 @@
 
 struct RaycastHit
 {
-    int partitionIndex;
+    int meshIndex;
 };
+
 
 struct PathVertex
 {
@@ -86,24 +87,17 @@ public:
         glBindTexture(GL_TEXTURE_2D, 1);
 
         // CAMERA PATH BUFFER
-        uint32_t cameraPathVertexCount = SCA_W * SCA_H * (cameraBounces+1);
+        uint32_t cameraPathVertexCount = SCA_W * SCA_H * (bounces+1);
         glGenBuffers(1, &cameraPathVertexBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cameraPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * cameraPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, cameraPathVertexBuffer);
-
-        // LIGHT PATH BUFFER
-        uint32_t lightPathVertexCount = SCA_W * SCA_H * (lightBounces+2);
-        glGenBuffers(1, &lightPathVertexBuffer);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, lightPathVertexBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * lightPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, lightPathVertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, cameraPathVertexBuffer);
 
         // RAYCAST BUFFER
         glGenBuffers(1, &raycastBuffer);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, raycastBuffer);
         glBufferStorage(GL_SHADER_STORAGE_BUFFER, sizeof(RaycastHit), nullptr, GL_DYNAMIC_STORAGE_BIT | GL_MAP_READ_BIT);  
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 13, raycastBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, raycastBuffer);
 
         // RESERVE SPACE FOR GROUP ARRAYS
         uint32_t tilesX = static_cast<uint32_t>((static_cast<float>(SCA_W) + 32) / 32);
@@ -146,16 +140,10 @@ public:
         glBindTexture(GL_TEXTURE_2D, 1);
 
         // RESIZE CAMERA PATH VERTEX BUFFER
-        uint32_t cameraPathVertexCount = SCA_W * SCA_H * (cameraBounces+1);
+        uint32_t cameraPathVertexCount = SCA_W * SCA_H * (bounces+1);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, cameraPathVertexBuffer);
         glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * cameraPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 11, cameraPathVertexBuffer);
-
-        // RESIZE LIGHT PATH VERTEX BUFFER
-        uint32_t lightPathVertexCount = SCA_W * SCA_H * (lightBounces+2);
-        glBindBuffer(GL_SHADER_STORAGE_BUFFER, lightPathVertexBuffer);
-        glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * lightPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
-        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 12, lightPathVertexBuffer);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, cameraPathVertexBuffer);
 
         // RESERVE SPACE FOR GROUP TIMES
         uint32_t tilesX = static_cast<uint32_t>((static_cast<float>(SCA_W) + 32) / 32);
@@ -171,6 +159,18 @@ public:
         frameCount = 0;
     }
 
+    void ResizePathBuffer()
+    {
+        int SCA_W = static_cast<int>(static_cast<float>(VIEWPORT_WIDTH) * resolutionScale);
+        int SCA_H = static_cast<int>(static_cast<float>(VIEWPORT_HEIGHT) * resolutionScale);
+
+        // CAMERA PATH BUFFER
+        uint32_t cameraPathVertexCount = SCA_W * SCA_H * (bounces+1);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, cameraPathVertexBuffer);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(PathVertex) * cameraPathVertexCount, nullptr, GL_DYNAMIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 10, cameraPathVertexBuffer);
+    }
+
     void RestartRender()
     {
         // CLEAR SCHEDULING BUFFERS
@@ -180,40 +180,6 @@ public:
         frameCount = 0;
     }
 
-    void SetRendererDynamic()
-    {
-        if (dynamicScene == false)
-        {
-            dynamicScene = true;
-
-            // SAVE CURRENT SETTINGS
-            revert_resolutionScale = resolutionScale;
-            revert_cameraBoucnes = cameraBounces;
-
-            // OPTIMISE THE FRAMERATE
-            resolutionScale = 0.2f;
-            cameraBounces = 1;
-
-            // RESIZE IMAGES TO LOWER RESOLUTION
-            ResizeFramebuffer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-        }
-    }
-
-    void SetRendererStatic()
-    {
-        if (dynamicScene)
-        {
-            dynamicScene = false;
-
-            // RESET RESOLUTION SCALE AND RENDER BUDGET
-            resolutionScale = revert_resolutionScale;
-            cameraBounces = revert_cameraBoucnes;
-
-            // RESIZE IMAGES TO FULL RESOLUTION
-            ResizeFramebuffer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
-        }
-    }
-
     void PathtraceFrame(unsigned int pathtraceShader, Camera &camera)
     {
         auto startTime = std::chrono::high_resolution_clock::now();
@@ -221,13 +187,15 @@ public:
         int SCA_W = static_cast<int>(static_cast<float>(VIEWPORT_WIDTH) * resolutionScale);
         int SCA_H = static_cast<int>(static_cast<float>(VIEWPORT_HEIGHT) * resolutionScale);
 
+        uint32_t currentBounces = static_cast<uint32_t>(bounces);
+        if (dynamicScene) currentBounces = 1;
+
+
         glUseProgram(pathtraceShader);
         camera.UpdatePathtracerUniforms(); // CAMERA UNIFORM
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_frameCount"), frameCount); // FRAME COUNT FOR PSEUDO RANDOMNESS
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_accumulationFrame"), accumulationFrame); // FRAME ACCUMULATION COUNT
-        glUniform1ui(glGetUniformLocation(pathtraceShader, "u_debugMode"), 0); // DEBUG MODE
-        glUniform1ui(glGetUniformLocation(pathtraceShader, "u_bounces"), cameraBounces); // CAMERA BOUNCES
-        glUniform1ui(glGetUniformLocation(pathtraceShader, "u_light_bounces"), lightBounces); // LIGHT BOUCNES
+        glUniform1ui(glGetUniformLocation(pathtraceShader, "u_bounces"), currentBounces); // CAMERA BOUNCES
         glUniform1f(glGetUniformLocation(pathtraceShader, "u_resolution_scale"), resolutionScale); // RESOLUTION SCALE
         glBindImageTexture(0, RenderTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F); // RENDER TEXTURE
         glBindImageTexture(1, DisplayTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8); // DISPLAY TEXTURE
@@ -275,7 +243,7 @@ public:
 
             auto now = std::chrono::high_resolution_clock::now();
             float totalDuration = std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count();
-            if (totalDuration + dispatchDuration >= renderBudget) break; // STOP RENDERING AFTER 16 MILLISECONDS
+            if (totalDuration + TileQueue.front().estimatedTime >= renderBudget) break; // STOP RENDERING AFTER 16 MILLISECONDS
         }
 
         if (TileQueue.empty()) {
@@ -307,7 +275,38 @@ public:
         glGetBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(RaycastHit), &hit);
         
         // RETURN PARTITION INDEX
-        return hit.partitionIndex;
+        return hit.meshIndex;
+    }
+
+    void SetRendererDynamic()
+    {
+        if (dynamicScene == false)
+        {
+            dynamicScene = true;
+
+            // SAVE CURRENT SETTINGS
+            revert_resolutionScale = resolutionScale;
+
+            // OPTIMISE THE FRAMERATE
+            resolutionScale = 0.25f;
+
+            // RESIZE IMAGES TO LOWER RESOLUTION
+            ResizeFramebuffer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        }
+    }
+
+    void SetRendererStatic()
+    {
+        if (dynamicScene)
+        {
+            dynamicScene = false;
+
+            // RESET RESOLUTION SCALE AND RENDER BUDGET
+            resolutionScale = revert_resolutionScale;
+
+            // RESIZE IMAGES TO FULL RESOLUTION
+            ResizeFramebuffer(VIEWPORT_WIDTH, VIEWPORT_HEIGHT);
+        }
     }
 
     void RenderToViewport()
@@ -321,12 +320,13 @@ public:
     }
 
     uint32_t accumulationFrame = 0;
+    int bounces = 3;
+
 private:
 
+    uint32_t currentBounces;
     float renderBudget = 14;
     float resolutionScale = 1.0f;
-    uint32_t cameraBounces = 3;
-    uint32_t lightBounces = 2;
     uint32_t frameCount = 0;
 
     QuadRenderer qRenderer;
@@ -345,7 +345,6 @@ private:
     // DYNAMIC SCENES
     bool dynamicScene = false;
     float revert_resolutionScale;
-    float revert_cameraBoucnes;
 
 
     void ScheduleRenderTiles(int x_blocks, int y_blocks, uint32_t accumulationFrame)
