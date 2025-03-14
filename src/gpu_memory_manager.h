@@ -20,34 +20,47 @@ public:
 
     DynamicStorageBuffer(int binding = 0, uint32_t allocatedSpace = 0) : _binding(binding)
     {
+        // SET BUFFER SIZE
         bufferSize = allocatedSpace;
+
+        // CREATE EMPTY BUFFER
         glGenBuffers(1, &bufferID);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferID);
         glBufferStorage(GL_SHADER_STORAGE_BUFFER, bufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
+
+        // SET BINDING POINT
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, _binding, bufferID);
     }
 
     ~DynamicStorageBuffer()
     {
-        std::cout << "deleting buffer" << std::endl;
         glDeleteBuffers(1, &bufferID);
     }
 
     void GrowBuffer(uint32_t addSize)
     {
+        // INCREASE BUFFER SIZE
         bufferSize += addSize;
+
+        // CREATE A NEW LARGER BUFFER
         unsigned int newBufferID;
         glGenBuffers(1, &newBufferID);
         glBindBuffer(GL_SHADER_STORAGE_BUFFER, newBufferID);
         glBufferStorage(GL_SHADER_STORAGE_BUFFER, bufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, _binding, newBufferID);
 
+        // COPY CURRENT DATA INTO LARGER BUFFER
         glBindBuffer(GL_COPY_READ_BUFFER, bufferID);
         glBindBuffer(GL_COPY_WRITE_BUFFER, newBufferID);
         glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, bufferSize - addSize);
+
+        // DELETE CURRENT BUFFER
         glDeleteBuffers(1, &bufferID);
 
+        // UPDATE CURRENT BUFFER
         bufferID = newBufferID;
+
+        // SET BINDING POINT OF NEW LARGER BUFFER
         glBindBufferBase(GL_SHADER_STORAGE_BUFFER, _binding, bufferID);
     }
 
@@ -87,7 +100,6 @@ public:
         pathtraceShader(_pathtraceShader),
         VertexBuffer(DynamicStorageBuffer(2, 0)),
         IndexBuffer(DynamicStorageBuffer(3, 0)),
-        MaterialBuffer(DynamicStorageBuffer(4, 0)),
         BvhBuffer(DynamicStorageBuffer(5, 0)),
         PartitionBuffer(DynamicStorageBuffer(6, 0)),
         DirectionalLightBuffer(DynamicStorageBuffer(7, 0)),
@@ -171,24 +183,6 @@ public:
         IndexBuffer.UnmapBuffer();
         BvhBuffer.UnmapBuffer();
         PartitionBuffer.UnmapBuffer();
-    }
-
-    void AddMaterialToScene(MaterialData& materialData)
-    {        
-        // GET MATERIAL SIZE
-        uint32_t materialDataSize = sizeof(MaterialData);
-
-        // GROW BUFFER TO ACCOMODATE NEW MATERIAL
-        MaterialBuffer.GrowBuffer(materialDataSize);
-
-        // GET MAPPED MATERIAL BUFFER
-        void* mappedMaterialBuffer = MaterialBuffer.GetMappedBuffer(MaterialBuffer.BufferSize() - materialDataSize, materialDataSize);
-
-        // COPY MATERIAL TO THE GPU
-        memcpy((char*)mappedMaterialBuffer, &materialData, materialDataSize);
-
-        // UNMAP BUFFER
-        MaterialBuffer.UnmapBuffer();
     }
 
     void AddDirectionalLightToScene(DirectionalLight& directionalLight, size_t directionalLightCount)
@@ -296,22 +290,22 @@ public:
         PointLightBuffer.UnmapBuffer();
     }
 
-    void UpdateMaterial(MaterialData& materialData, int materialIndex)
+    void UpdateSpotlight(Spotlight* light, int lightIndex)
     {
-        // GET MATERIAL SIZE
-        uint32_t materialDataSize = sizeof(MaterialData);
+        // GET LIGHT SIZE
+        uint32_t lightDataSize = sizeof(Spotlight);
 
-        // GET MATERIAL BUFFER OFFSET
-        uint32_t bufferOffset = materialIndex * materialDataSize;
+        // GET LIGHT BUFFER OFFSET
+        uint32_t bufferOffset = lightIndex * lightDataSize;
 
-        // GET MAPPED MATERIAL BUFFER
-        void* mappedMaterialBuffer = MaterialBuffer.GetMappedBuffer(bufferOffset, materialDataSize);
+        // GET MAPPED LIGHT BUFFER
+        void* mappedLightBuffer = SpotlightBuffer.GetMappedBuffer(bufferOffset, lightDataSize);
 
-        // COPY UPDATED MATERIAL DATA TO THE GPU
-        memcpy((char*)mappedMaterialBuffer, &materialData, materialDataSize);
+        // COPY UPDATED LIGHT DATA TO THE GPU
+        memcpy((char*)mappedLightBuffer, light, lightDataSize);
 
         // UNMAP BUFFER
-        MaterialBuffer.UnmapBuffer();
+        SpotlightBuffer.UnmapBuffer();
     }
 
     void UpdateMeshMaterial(Mesh* mesh, uint32_t meshIndex, uint32_t materialIndex)
@@ -351,19 +345,20 @@ public:
 
 private:
 
+    // DYNAMIC SHADER STORAGE BUFFERS
     DynamicStorageBuffer VertexBuffer;
     DynamicStorageBuffer IndexBuffer;
-    DynamicStorageBuffer MaterialBuffer;
     DynamicStorageBuffer BvhBuffer;
     DynamicStorageBuffer PartitionBuffer;
     DynamicStorageBuffer DirectionalLightBuffer;
     DynamicStorageBuffer PointLightBuffer;
     DynamicStorageBuffer SpotlightBuffer;
-
+    
+    // TRACK BUFFER VARIABLES
     uint32_t vertexStart = 0;
     uint32_t indexStart = 0;
     uint32_t bvhStart = 0;
-    uint32_t materialStart = 0;
 
+    // PATH TRACING SHADER ID
     unsigned int pathtraceShader;
 };

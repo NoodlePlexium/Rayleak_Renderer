@@ -22,27 +22,38 @@ struct Material
 
 uniform Material material;
 
+// SIMPLIFIED ACES TONE MAPPING
+vec3 ACES(vec3 colour)
+{
+    vec3 numerator = colour * (2.51f * colour + 0.03f);
+    vec3 denominator = colour * (2.43f * colour + 0.59f) + 0.14f;
+    vec3 result = numerator / denominator;
+    return clamp(result, 0.0f, 1.0f);
+}
+
 
 void main()
 {
     // DIRECTIONAL LIGHT
-    vec3 lightPos = vec3(4, -3, -3);
-    vec3 lightColour = vec3(1, 1, 1);
-    vec3 dirToLight = normalize(lightPos);
-
-    vec3 normal = normalize(FragPos);
+    vec3 directLightPos = vec3(4, -3, -3);
+    vec3 directLightColour = vec3(2, 2, 2);
+    vec3 dirToLight = normalize(directLightPos);
+    vec3 directLight = directLightColour * max(dot(FragNormal, dirToLight), 0);
 
     // AMBIENT LIGHT
     vec3 ambientLight = vec3(0.5, 0.7, 0.95) * 0.5;
 
-    vec3 lighting = lightColour * max(dot(normal, dirToLight), 0) + ambientLight;
-
-
-
-    vec4 albedoColour = vec4(material.colour, 1);
+    // SURFACE COLOUR
+    vec3 surfaceColour = material.colour; 
     if ((material.textureFlags & (1 << 0)) != 0)
-    {
-        albedoColour = vec4(material.colour, 1) * texture(sampler2D(material.albedoHandle), FragUV);
-    }
-    FragColour = albedoColour * vec4(lighting, 1);
+        surfaceColour = material.colour * texture(sampler2D(material.albedoHandle), FragUV).xyz;
+
+    // EMITTED LIGHT
+    vec3 emittedLight = surfaceColour * material.emission;
+
+    // CALCULATE FRAGMENT LIGHTING
+    vec3 lighting = (directLight + ambientLight) * surfaceColour + emittedLight;
+
+    // SET FRAG COLOUR
+    FragColour = vec4(ACES(lighting), 1); 
 }

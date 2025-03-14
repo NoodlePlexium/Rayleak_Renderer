@@ -23,7 +23,10 @@ public:
 
     void UpdatePathtracerUniforms()
     {
+        // RECALCULATE DIRECTION VECTORS
         UpdateCameraVectors();
+
+        // UPDATE UNIFORMS
         glUniform3f(camInfoPosLocation, pos.x, pos.y, pos.z);
         glUniform3f(camInfoForwardLocation, forward.x, forward.y, forward.z);
         glUniform3f(camInfoRightLocation, right.x, right.y, right.z);
@@ -31,20 +34,24 @@ public:
         glUniform1f(camInfoFOVLocation, fov);
         glUniform1ui(cameraInfoDOFLocation, dof? 1 : 0);
         glUniform1f(cameraInfoFocusDistanceLocation, focus_distance);
-        float aperture = (1 / fov) / fStop; 
-        glUniform1f(cameraInfoApertureLocation, aperture);
+        glUniform1f(cameraInfoApertureLocation, (1 / fov) / fStop);
         glUniform1ui(cameraInfoAntiAliasingLocation, anti_aliasing);
         glUniform1f(cameraInfoExposureLocation, exposure);
     }
 
     void UpdateRaycasterUniforms(unsigned int shader)
     {
+        // RECALCULATE DIRECTION VECTORS
+        UpdateCameraVectors();
+        
+        // GET RAYCASTER SHADER UNIFORM LOCATIONS
         unsigned int camInfoPosLocation_raycast = glGetUniformLocation(shader, "cameraInfo.pos");
         unsigned int camInfoForwardLocation_raycast = glGetUniformLocation(shader, "cameraInfo.forward");
         unsigned int camInfoRightLocation_raycast = glGetUniformLocation(shader, "cameraInfo.right");
         unsigned int camInfoUpLocation_raycast= glGetUniformLocation(shader, "cameraInfo.up");
         unsigned int camInfoFOVLocation_raycast = glGetUniformLocation(shader, "cameraInfo.FOV");
-        UpdateCameraVectors();
+
+        // SET RAYCAST SHADER UNIFORMS
         glUniform3f(camInfoPosLocation_raycast, pos.x, pos.y, pos.z);
         glUniform3f(camInfoForwardLocation_raycast, forward.x, forward.y, forward.z);
         glUniform3f(camInfoRightLocation_raycast, right.x, right.y, right.z);
@@ -82,6 +89,7 @@ public:
 
         glm::mat3x3 rotationMat = zRot * yRot * xRot;
 
+        // CALCULATE DIRECTION VECTORS
         forward = rotationMat * glm::vec3(0, 0, 1);
         up = zRot * rotationMat * glm::vec3(0, 1, 0);
         right = zRot * rotationMat * glm::vec3(1, 0, 0);
@@ -109,7 +117,11 @@ public:
 
 
 private:
+
+    // PATH TRACING SHADER ID
     unsigned int pathtraceShader;
+
+    // PATH TRACING SHADER CAMERA UNIFORM LOCATIONS
     unsigned int camInfoPosLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.pos");
     unsigned int camInfoForwardLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.forward");
     unsigned int camInfoRightLocation = glGetUniformLocation(pathtraceShader, "cameraInfo.right");

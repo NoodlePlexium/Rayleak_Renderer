@@ -12,6 +12,7 @@
 #include "debug.h"
 #include "camera.h"
 #include "quad_renderer.h"
+#include "thumbnail_renderer.h"
 
 struct RaycastHit
 {
@@ -197,6 +198,8 @@ public:
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_accumulationFrame"), accumulationFrame); // FRAME ACCUMULATION COUNT
         glUniform1ui(glGetUniformLocation(pathtraceShader, "u_bounces"), currentBounces); // CAMERA BOUNCES
         glUniform1f(glGetUniformLocation(pathtraceShader, "u_resolution_scale"), resolutionScale); // RESOLUTION SCALE
+        glUniform3f(glGetUniformLocation(pathtraceShader, "u_skyColour"), skyColour.x, skyColour.y, skyColour.z); // SKY COLOUR
+        glUniform1f(glGetUniformLocation(pathtraceShader, "u_skyBrightness"), skyBrightness); // SKY BRIGHTNESS
         glBindImageTexture(0, RenderTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA32F); // RENDER TEXTURE
         glBindImageTexture(1, DisplayTexture, 0, GL_FALSE, 0, GL_READ_WRITE, GL_RGBA8); // DISPLAY TEXTURE
 
@@ -311,7 +314,14 @@ public:
 
     void RenderToViewport()
     {
+        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
         qRenderer.RenderToViewport(DisplayTexture);
+    }
+
+    void RenderThumbnail(Material& material, int width, int height)
+    {
+        thumbnailRenderer.RenderThumbnail(material, width, height);
     }
 
     unsigned int GetFrameBufferTextureID()
@@ -322,14 +332,19 @@ public:
     uint32_t accumulationFrame = 0;
     int bounces = 3;
 
+    // SKY
+    glm::vec3 skyColour = glm::vec3(0.5f, 0.7f, 0.95f);
+    float skyBrightness = 1.5f;
+
 private:
 
     uint32_t currentBounces;
-    float renderBudget = 14;
+    float renderBudget = 10;
     float resolutionScale = 1.0f;
     uint32_t frameCount = 0;
 
     QuadRenderer qRenderer;
+    ThumbnailRenderer thumbnailRenderer;
     int VIEWPORT_WIDTH;
     int VIEWPORT_HEIGHT;
     unsigned int DisplayTexture;

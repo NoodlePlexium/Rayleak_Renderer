@@ -44,6 +44,7 @@ struct PointLight
 struct Spotlight
 {
     vec3 position;
+    vec3 rotation;
     vec3 direction;
     vec3 colour;
     float brightness;
@@ -169,7 +170,8 @@ uniform uint u_pointLightCount;
 uniform uint u_spotlightCount;
 uniform uint u_emissiveTriangleCount;
 uniform float u_resolution_scale;
-
+uniform vec3 u_skyColour;
+uniform float u_skyBrightness;
 
 
 // FROM Sebastian Lague
@@ -755,7 +757,7 @@ vec3 EvaluatePath(int segments, uint bounces, uint pixelIndex, uint seed)
     {
         if (cameraPathVertices[pathIndex + i].hitSky == 1)
         {
-            light += vec3(0.5f, 0.7f, 0.95f) * 2.0f;
+            light += u_skyColour * u_skyBrightness;
             continue;
         }
 

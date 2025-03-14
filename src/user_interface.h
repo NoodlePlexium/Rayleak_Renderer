@@ -210,29 +210,36 @@ public:
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Header, HexToRGBA(BORDER));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-        if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
-
-            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 3));
+        if (ImGui::CollapsingHeader("Settings", ImGuiTreeNodeFlags_DefaultOpen)) 
+        {
+            // BEGIN CONTAINER
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, GAP));
             ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(MATERIAL_EDITOR_BG));
             ImGui::BeginChild("Settings", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY);
-
-            bool changedSettings = false;
             ImGui::Dummy(ImVec2(0, 0));
-            changedSettings |= DragFloatAttribute("Field of View", "FOV", "", 3, 3, &camera.fov, 0, 120);
-            changedSettings |= CheckboxAttribute("Depth of Field", "DOF", 3, 3, &camera.dof);
-            changedSettings |= DragFloatAttribute("Focus Distance", "FOCUS", "m", 3, 3, &camera.focus_distance, 0.1, 500);
-            changedSettings |= DragFloatAttribute("fStops", "fStops", "", 3, 3, &camera.fStop, 0.05f, 5.0f);
-            changedSettings |= CheckboxAttribute("Anti Aliasing", "AA", 3, 3, &camera.anti_aliasing);
-            changedSettings |= DragFloatAttribute("Exposure", "EXPOSURE", "", 3, 3, &camera.exposure, 0.0f, 3.0f, 0.01f);
 
+            // CAMERA SETTINGS
+            bool changed = false;
+            changed |= DragFloatAttribute("Field of View", "FOV", "", 3, 3, &camera.fov, 0, 120);
+            changed |= CheckboxAttribute("Depth of Field", "DOF", 3, 3, &camera.dof);
+            changed |= DragFloatAttribute("Focus Distance", "FOCUS", "m", 3, 3, &camera.focus_distance, 0.1, 500);
+            changed |= DragFloatAttribute("fStops", "fStops", "", 3, 3, &camera.fStop, 0.05f, 5.0f);
+            changed |= CheckboxAttribute("Anti Aliasing", "AA", 3, 3, &camera.anti_aliasing);
+            changed |= DragFloatAttribute("Exposure", "EXPOSURE", "", 3, 3, &camera.exposure, 0.0f, 3.0f, 0.01f);
+
+            // RENDER SETTINGS
             if (IntAttribute("Light Bounces", "BOUNCES", 3, &renderSystem.bounces, 1, 10))
             {
                 renderSystem.ResizePathBuffer();
-                changedSettings = true;
+                changed = true;
             }
 
-            if (changedSettings) restartRender = true;
+            // ENVIRONMENT SETTINGS
+            changed |= ColourSelectAttribute("sky colour", "###Sky Colour Button", "###Sky Colour", renderSystem.skyColour, skyColourPopupOpen, GAP, 3);
+            changed |= DragFloatAttribute("Sky Brightness", "SKY BRIGHTNESS", "", 3, 3, &renderSystem.skyBrightness, 0.0f, 4.0f, 0.01f);
+            if (changed) restartRender = true;
 
+            // CLOSE CONTAINER
             ImGui::Dummy(ImVec2(0, 0));
             ImGui::EndChild();
             ImGui::PopStyleVar();
@@ -373,6 +380,8 @@ public:
         ImGui::BeginChild("Lights Container", ImVec2(SpaceX() - GAP, SpaceY()), false);
         ImGui::Dummy(ImVec2(1, GAP));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, GAP));
+
+        // CREATE DIRECTIONAL LIGHT BUTTONS
         for (int i=0; i<lightManager.directionalLights.size(); ++i)
         {
             ImVec4 buttonColour = HexToRGBA(BUTTON);
@@ -389,8 +398,9 @@ public:
             }
             ImGui::PopStyleColor();
             ImGui::PopID();
-        }
+        }   
 
+        // CREATE POINT LIGHT BUTTONS
         for (int i=0; i<lightManager.pointLights.size(); ++i)
         {
             ImVec4 buttonColour = HexToRGBA(BUTTON);
@@ -409,6 +419,7 @@ public:
             ImGui::PopID();
         }
 
+        // CREATE SPOTLIGHT BUTTONS
         for (int i=0; i<lightManager.spotlights.size(); ++i)
         {
             ImVec4 buttonColour = HexToRGBA(BUTTON);
@@ -419,8 +430,8 @@ public:
             if (ImGui::Button(lightManager.spotlightNames[i].c_str(), ImVec2(SpaceX(), 0)))
             {
                 selectedDirectionalLight = -1;
-                selectedPointLight = i;
-                selectedSpotlight = -1;
+                selectedPointLight = -1;
+                selectedSpotlight = i;
                 selectedMesh = -1;
             }
             ImGui::PopStyleColor();
@@ -475,33 +486,7 @@ public:
             changed |= FloatAttribute("brightness", "##BRIGHTNESS", "", 3, 0, &light->brightness, 0, 1000);
             
             // LIGHT COLOUR SELECTION
-            bool colourButtonClicked = ColourButtonAttribute("colour", "###COLOUR", GAP, 0, &light->colour);
-            if (colourButtonClicked) lightColourPopupOpen = true;
-            if (lightColourPopupOpen)
-            {
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
-                ImGui::OpenPopup("Light Colour"); 
-                ImGui::BeginPopup("Light Colour");
-                ImGui::Text("%s", "Light Colour"); 
-                float col[3];
-                col[0] = light->colour.x;
-                col[1] = light->colour.y;
-                col[2] = light->colour.z;
-                ImGui::ColorPicker3("###Light Colour", col, ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview);
-                changed |= col[0] != light->colour.x;
-                changed |= col[1] != light->colour.y;
-                changed |= col[2] != light->colour.z;
-                light->colour.x = col[0];
-                light->colour.y = col[1];
-                light->colour.z = col[2];
-
-                if (!ImGui::IsAnyItemHovered() && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && ImGui::IsMouseClicked(0)) {
-                    lightColourPopupOpen = false;  // Close the popup if clicking outside
-                }
-
-                ImGui::EndPopup();
-                ImGui::PopStyleVar();
-            }
+            changed |= ColourSelectAttribute("colour", "###COLOUR", "###Light Colour", light->colour, lightColourPopupOpen, GAP, 0);
 
             restartRender |= changed;
 
@@ -515,41 +500,35 @@ public:
         {
             PointLight* light = &lightManager.pointLights[selectedPointLight];
             bool changed = false;
-            changed |= TransformAttribute("rotation", GAP, &light->position.x, &light->position.y, &light->position.z); ImGui::Dummy(ImVec2(0, 0));
+            changed |= TransformAttribute("position", GAP, &light->position.x, &light->position.y, &light->position.z); ImGui::Dummy(ImVec2(0, 0));
             changed |= FloatAttribute("brightness", "##BRIGHTNESS", "", 3, 0, &light->brightness, 0, 1000);
             
             // LIGHT COLOUR SELECTION
-            bool colourButtonClicked = ColourButtonAttribute("colour", "###COLOUR", GAP, 0, &light->colour);
-            if (colourButtonClicked) lightColourPopupOpen = true;
-            if (lightColourPopupOpen)
-            {
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
-                ImGui::OpenPopup("Light Colour"); 
-                ImGui::BeginPopup("Light Colour");
-                ImGui::Text("%s", "Light Colour"); 
-                float col[3];
-                col[0] = light->colour.x;
-                col[1] = light->colour.y;
-                col[2] = light->colour.z;
-                ImGui::ColorPicker3("###Light Colour", col, ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview);
-                changed |= col[0] != light->colour.x;
-                changed |= col[1] != light->colour.y;
-                changed |= col[2] != light->colour.z;
-                light->colour.x = col[0];
-                light->colour.y = col[1];
-                light->colour.z = col[2];
-
-                if (!ImGui::IsAnyItemHovered() && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && ImGui::IsMouseClicked(0)) {
-                    lightColourPopupOpen = false;  // Close the popup if clicking outside
-                }
-
-                ImGui::EndPopup();
-                ImGui::PopStyleVar();
-            }
-
+            changed |= ColourSelectAttribute("colour", "###COLOUR", "###Light Colour", light->colour, lightColourPopupOpen, GAP, 0);
+        
             restartRender |= changed;
 
             if (changed) gpu_memory.UpdatePointLight(light, selectedPointLight);
+        }
+
+        // IF SPOTLIGHT IS SELECTED
+        if (selectedSpotlight != -1)
+        {
+            Spotlight* light = &lightManager.spotlights[selectedSpotlight];
+            bool changed = false;
+            changed |= TransformAttribute("position", GAP, &light->position.x, &light->position.y, &light->position.z); ImGui::Dummy(ImVec2(0, 0));
+            changed |= TransformAttribute("rotation", GAP, &light->rotation.x, &light->rotation.y, &light->rotation.z); ImGui::Dummy(ImVec2(0, 0));
+            changed |= FloatAttribute("brightness", "##BRIGHTNESS", "", 3, 0, &light->brightness, 0, 1000); 
+            changed |= FloatAttribute("angle", "##ANGLE", "", 3, 0, &light->angle, 0, 360); 
+            changed |= FloatAttribute("falloff", "##FALLOFF", "", 3, 0, &light->falloff, 0, 360 - light->angle);
+
+            // LIGHT COLOUR SELECTION
+            changed |= ColourSelectAttribute("colour", "###COLOUR", "###Light Colour", light->colour, lightColourPopupOpen, GAP, 0);
+
+            restartRender |= changed;
+
+            light->TransformDirection();
+            if (changed) gpu_memory.UpdateSpotlight(light, selectedSpotlight);
         }
 
         ImGui::PopStyleVar();
@@ -609,17 +588,17 @@ public:
         ImGui::PopStyleVar();
     }
 
-    void RenderMaterialExplorer(std::vector<Material>& materials, std::vector<Texture>& textures, GPU_Memory& gpu_memory)
+    void RenderMaterialExplorer(std::vector<Material>& materials, std::vector<Texture>& textures, GPU_Memory& gpu_memory, RenderSystem& renderSystem)
     {   
         // MATERIAL EXPLORER PANEL
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0,0,0,1));
         ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0,0)); 
-        ImGui::BeginChild("Material Explorer", ImVec2(SpaceX() * 0.5f, SpaceY()), true);
+        ImGui::BeginChild("Material Explorer", ImVec2(SpaceX() * 0.6f, SpaceY()), true);
         
         // MATERIAL EXPLORER TITLE BAR
-        MaterialPanelHeader(materials, gpu_memory);
+        MaterialPanelHeader(materials, gpu_memory, renderSystem);
 
         float materialEditorWidth = 280;
 
@@ -647,10 +626,10 @@ public:
         // END MATERIAL CONTAINER GRID
 
 
-
         // MATERIAL EDITOR CONTAINER
         ImGui::SameLine();
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(MATERIAL_EDITOR_BG));
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, GAP));
         ImGui::BeginChild("Material Editor", ImVec2(SpaceX(), SpaceY()), false);
 
         if (selectedMaterialIndex != -1)
@@ -661,33 +640,7 @@ public:
             PaddedText(materials[selectedMaterialIndex].name, 5);
 
             // MATERIAL COLOUR PICKER
-            bool colourButtonClicked = ColourButtonAttribute("colour", "###COLOUR", GAP, 0, &materialData.colour);
-            if (colourButtonClicked) materialColourPopupOpen = true;
-            if (materialColourPopupOpen)
-            {
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
-                ImGui::OpenPopup("Material Colour"); 
-                ImGui::BeginPopup("Material Colour");
-                ImGui::Text("%s", "Material Colour"); 
-                float col[3];
-                col[0] = materialData.colour.x;
-                col[1] = materialData.colour.y;
-                col[2] = materialData.colour.z;
-                ImGui::ColorPicker3("###Material Colour", col, ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview);
-                updatedMaterial |= col[0] != materialData.colour.x;
-                updatedMaterial |= col[1] != materialData.colour.y;
-                updatedMaterial |= col[2] != materialData.colour.z;
-                materialData.colour.x = col[0];
-                materialData.colour.y = col[1];
-                materialData.colour.z = col[2];
-
-                if (!ImGui::IsAnyItemHovered() && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && ImGui::IsMouseClicked(0)) {
-                    materialColourPopupOpen = false;  
-                }
-
-                ImGui::EndPopup();
-                ImGui::PopStyleVar();
-            }
+            updatedMaterial  |= ColourSelectAttribute("colour", "###Material Colour", "### Material Colour Button", materialData.colour, materialColourPopupOpen, GAP, 0);
             std::string roughnessID = std::string("Material Roughness") + baseID;
             std::string emissionID = std::string("Material Emission") + baseID;
             std::string refractiveID = std::string("Material Refractive") + baseID;
@@ -716,7 +669,7 @@ public:
                 gpu_memory.UpdateMaterial(materialData, selectedMaterialIndex);
 
                 // RERENDER MATERIAL THUMBNAIL
-                thumbnailRenderer.RenderThumbnail(materials[selectedMaterialIndex], MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
+                renderSystem.RenderThumbnail(materials[selectedMaterialIndex], MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
 
                 // RESTART RENDER
                 restartRender = true;
@@ -725,6 +678,7 @@ public:
 
         ImGui::EndChild();
         ImGui::PopStyleColor();
+        ImGui::PopStyleVar();
         // END MATERIAL EDITOR CONTAINER
 
         // END MATERIAL PANEL 
@@ -773,12 +727,13 @@ public:
     }
 
 private:
-    ThumbnailRenderer thumbnailRenderer;
     unsigned int pathtraceShader;
+
     ImFont* fontBody;
     ImFont* fontHeader;
     Texture OBJ_Icon;
 
+    // STYLING
     const char* BORDER = "#3d444d";
     const char* ATTRIBUTE_BG = "#3d444d";
     const char* INPUT_BG = "#02050a";
@@ -818,6 +773,10 @@ private:
     bool lightColourPopupOpen = false;
     bool materialColourPopupOpen = false;
 
+    // SKY CONTROLS
+    bool skyColourPopupOpen = false;
+
+
     // ADAPTED FROM Tor Klingberg https://stackoverflow.com/questions/3723846/convert-from-hex-color-to-rgb-struct-in-c
     ImVec4 HexToRGBA(const char* hex)
     {
@@ -853,6 +812,7 @@ private:
         ImGui::Unindent(padding);
     }
 
+    // }----------{ ATTRIBUTE COMPONENTS }----------{
     bool FloatAttribute(std::string label, const char* id, const char* suffix, float padding, float margin, float* value, float min, float max)
     {
         bool changed = false;
@@ -989,37 +949,6 @@ private:
         ImGui::EndChild();
         ImGui::PopStyleColor(2);
         return changed;
-    }
-
-    bool ColourButtonAttribute(std::string label, const char* id, float padding, float margin, glm::vec3* colour)
-    {
-        bool changed = false;
-        std::string frameID = "###" + std::string(id);
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(ATTRIBUTE_BG));
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(INPUT_BG));
-
-        ImGui::Dummy(ImVec2(margin, 1));
-        ImGui::SameLine();
-
-        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX() - margin, 0), ImGuiChildFlags_AutoResizeY);
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-        std::string uniqueID = "##" + std::string(id);
-        ImGui::Dummy(ImVec2(1, padding));
-        ImGui::Indent(padding); 
-        ImGui::Text("%s", label.c_str());   
-        ImGui::SameLine(SpaceX() - 100); 
-        ImGui::PushItemWidth(100);
-
-
-        ImVec4 col(colour->x, colour->y, colour->z, 1);
-        bool clicked = ImGui::ColorButton(id, col, 0, ImVec2(100, 0));
-        ImGui::PopItemWidth();
-        ImGui::Unindent(padding); 
-        ImGui::Dummy(ImVec2(1, padding)); 
-        ImGui::PopStyleVar();
-        ImGui::EndChild();
-        ImGui::PopStyleColor(2);
-        return clicked;
     }
 
     bool CheckboxAttribute(std::string label, const char* id, float padding, float margin, bool* value)
@@ -1164,6 +1093,63 @@ private:
         *x = tempX;
         *y = tempY;
         *z = tempZ;
+        return changed;
+    }
+
+    bool ColourSelectAttribute(const char* label, const char* colourButtonID, const char* colourPickerID, glm::vec3 &colour, bool &colourPopupOpen, float padding, float margin)
+    {
+
+        // COLOUR BUTTON ATTRIBUTE
+        std::string frameID = "###" + std::string(colourButtonID);
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(ATTRIBUTE_BG));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, HexToRGBA(INPUT_BG));
+        ImGui::Dummy(ImVec2(margin, 1));
+        ImGui::SameLine();
+        ImGui::BeginChild(frameID.c_str(), ImVec2(SpaceX() - margin, 0), ImGuiChildFlags_AutoResizeY);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
+        std::string uniqueID = "##" + std::string(colourButtonID);
+        ImGui::Dummy(ImVec2(1, padding));
+        ImGui::Indent(padding); 
+        ImGui::Text("%s", label);   
+        ImGui::SameLine(SpaceX() - 100); 
+        ImGui::PushItemWidth(100);
+        ImVec4 col(colour.x, colour.y, colour.z, 1);
+        bool colourButtonClicked = ImGui::ColorButton(colourButtonID, col, 0, ImVec2(100, 0));
+        ImGui::PopItemWidth();
+        ImGui::Unindent(padding); 
+        ImGui::Dummy(ImVec2(1, padding)); 
+        ImGui::PopStyleVar();
+        ImGui::EndChild();
+        ImGui::PopStyleColor(2);
+
+        // COLOUR SELECTION POPUP
+        bool changed = false;
+        if (colourButtonClicked) colourPopupOpen = true;
+        if (colourPopupOpen)
+        {
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(5, 5));
+            ImGui::OpenPopup(label); 
+            ImGui::BeginPopup(label);
+            ImGui::Text("%s", label); 
+            float col[3];
+            col[0] = colour.x;
+            col[1] = colour.y;
+            col[2] = colour.z;
+            ImGui::ColorPicker3(colourPickerID, col, ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_NoSidePreview);
+            changed |= col[0] != colour.x;
+            changed |= col[1] != colour.y;
+            changed |= col[2] != colour.z;
+            colour.x = col[0];
+            colour.y = col[1];
+            colour.z = col[2];
+
+            if (!ImGui::IsAnyItemHovered() && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && ImGui::IsMouseClicked(0)) {
+                colourPopupOpen = false; 
+            }
+
+            ImGui::EndPopup();
+            ImGui::PopStyleVar();
+        }
         return changed;
     }
 
@@ -1314,7 +1300,7 @@ private:
     }
 
     // }----------{ MATERIAL EXPLORER PANEL }----------{
-    void MaterialPanelHeader(std::vector<Material>& materials, GPU_Memory& gpu_memory)
+    void MaterialPanelHeader(std::vector<Material>& materials, GPU_Memory& gpu_memory, RenderSystem& renderSystem)
     {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0)); 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(BORDER));
@@ -1333,8 +1319,9 @@ private:
         {   
             Material newMaterial;
             newMaterial.CreateThumbnailFrameBuffer(MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
-            thumbnailRenderer.RenderThumbnail(newMaterial, MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
+            renderSystem.RenderThumbnail(newMaterial, MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
             materials.push_back(newMaterial);
+            std::cout << "material count: " << materials.size() << std::endl;
             gpu_memory.AddMaterialToScene(newMaterial.data);
             std::cout << "create material pressed" << std::endl;
         }
@@ -1373,6 +1360,7 @@ private:
             ImVec2(MODEL_THUMBNAIL_SIZE-4, MODEL_THUMBNAIL_SIZE-2)))
         {
             selectedMaterialIndex = i;
+            std::cout << "selected material: " << selectedMaterialIndex << std::endl;
         }
         ImGui::PopStyleVar();
         ImGui::PopStyleColor(3);
@@ -1570,7 +1558,9 @@ private:
         ImGui::EndChild();
         ImGui::PopStyleColor();
     }
+    // }----------{ TEXTURE PANEL }----------{
 };
+
 
 
 

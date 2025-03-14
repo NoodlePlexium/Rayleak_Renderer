@@ -6,6 +6,13 @@
 #include "mesh.h"
 #include "material.h"
 
+
+struct ThumbnailMesh
+{
+    std::vector<float> vertices;
+    std::vector<uint32_t>indices;
+};
+
 class ThumbnailRenderer
 {
 public:
@@ -17,26 +24,27 @@ public:
         thumbnailShader = CreateRasterShader(vertexShaderSource, fragmentShaderSource);
 
         // LOAD SPHERE MODEL
-        LoadSphere("./models/ThumbnailSphere.obj", sphereMesh);
+        LoadThumbnailMesh("./models/ThumbnailSphere.obj", thumbnailMesh);
 
-        MVP = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f);
+        // MODEL VIEW PROJECTION MATRIX
+        MVP = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f, -1.0f);
         MVP = glm::rotate(MVP, glm::radians(90.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
         // GENERATE BUFFERS
-        glGenVertexArrays(1, &thumbnailVAO);
-        glGenBuffers(1, &thumbnailVBO);
+        glGenVertexArrays(1, &vertexAttributeObject);
+        glGenBuffers(1, &vertexBufferObject);
         glGenBuffers(1, &indexBufferObject);
 
         // BIND VERTEX ATTRIBUTE BUFFER
-        glBindVertexArray(thumbnailVAO);
+        glBindVertexArray(vertexAttributeObject);
 
         // VERTEX BUFFER
-        glBindBuffer(GL_ARRAY_BUFFER, thumbnailVBO);
-        glBufferData(GL_ARRAY_BUFFER, sphereMesh.vertices.size() * sizeof(float), sphereMesh.vertices.data(), GL_STATIC_DRAW);
+        glBindBuffer(GL_ARRAY_BUFFER, vertexBufferObject);
+        glBufferData(GL_ARRAY_BUFFER, thumbnailMesh.vertices.size() * sizeof(float), thumbnailMesh.vertices.data(), GL_STATIC_DRAW);
         
         // INDEX BUFFER
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferObject);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sphereMesh.indices.size() * sizeof(uint32_t), sphereMesh.indices.data(), GL_STATIC_DRAW);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, thumbnailMesh.indices.size() * sizeof(uint32_t), thumbnailMesh.indices.data(), GL_STATIC_DRAW);
         
         // VERTEX ATTRIBUTE BUFFER  
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
@@ -52,13 +60,16 @@ public:
 
     void RenderThumbnail(Material& material, int width, int height)
     {
+        // BIND THUMBNAIL FRAME BUFFER
         glBindFramebuffer(GL_FRAMEBUFFER, material.FBO);
+
+        // THUMBNAIL VIEWPORT
         glViewport(0, 0, width, height);
-        glClearColor(0.5f, 0.7f, 0.95f, 1); // SKY COLOUR
+        glClearColor(0, 0, 0, 1); 
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        glUseProgram(thumbnailShader);
 
         // BIND MATERIAL TEXTURES
+        glUseProgram(thumbnailShader);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, material.albedoID);
         glActiveTexture(GL_TEXTURE1);
@@ -85,15 +96,63 @@ public:
         // MODEL VIEW PROJECTION UNIFORM
         glUniformMatrix4fv(glGetUniformLocation(thumbnailShader, "u_MVP"), 1, GL_FALSE, &MVP[0][0]);
 
+        // BACKFACE CULLING
+        glFrontFace(GL_CW);
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_CULL_FACE);
+        glCullFace(GL_BACK);
+
         // RENDER TO FRAME BUFFER
-        glBindVertexArray(thumbnailVAO);
-        glDrawElements(GL_TRIANGLES, sphereMesh.indices.size(), GL_UNSIGNED_INT, 0);
+        glBindVertexArray(vertexAttributeObject);
+        glDrawElements(GL_TRIANGLES, thumbnailMesh.indices.size(), GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
     
 private:
-    unsigned int thumbnailShader, thumbnailVAO, thumbnailVBO, indexBufferObject;
-    SimpleMesh sphereMesh;
+    unsigned int thumbnailShader, vertexAttributeObject, vertexBufferObject, indexBufferObject;
+    ThumbnailMesh thumbnailMesh;
     glm::mat4 MVP;
+
+    void LoadThumbnailMesh(const char* filepath, ThumbnailMesh& mesh)
+    {
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string warn, err;
+
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filepath)) {
+            throw std::runtime_error(warn + err);
+        }
+        
+        mesh.vertices.reserve(shapes[0].mesh.indices.size() * 8); 
+        mesh.indices.reserve(shapes[0].mesh.indices.size());
+        uint32_t indicesUsed = 0;
+
+        for (const auto &index : shapes[0].mesh.indices)
+        {
+            if (index.vertex_index >= 0)
+            {
+                mesh.vertices.emplace_back(attrib.vertices[3 * index.vertex_index]);
+                mesh.vertices.emplace_back(attrib.vertices[3 * index.vertex_index + 1]);
+                mesh.vertices.emplace_back(attrib.vertices[3 * index.vertex_index + 2]);
+            }
+
+            if (index.normal_index >= 0)
+            {
+                mesh.vertices.emplace_back(attrib.normals[3 * index.normal_index]);
+                mesh.vertices.emplace_back(attrib.normals[3 * index.normal_index + 1]);
+                mesh.vertices.emplace_back(attrib.normals[3 * index.normal_index + 2]);
+            }
+
+            if (index.texcoord_index >= 0)
+            {
+                mesh.vertices.emplace_back(attrib.texcoords[2 * index.texcoord_index]);
+                mesh.vertices.emplace_back(attrib.texcoords[2 * index.texcoord_index + 1]);
+            }
+            mesh.indices.emplace_back(indicesUsed);
+            indicesUsed += 1;
+        }
+        mesh.vertices.resize(mesh.vertices.size());
+    }
 };
