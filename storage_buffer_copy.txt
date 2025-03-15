@@ -1,0 +1,77 @@
+class DynamicStorageBuffer
+{
+public:
+
+    DynamicStorageBuffer(int binding = 0, uint32_t allocatedSpace = 0) : _binding(binding)
+    {
+        // SET BUFFER SIZE
+        bufferSize = allocatedSpace;
+
+        // CREATE EMPTY BUFFER
+        glGenBuffers(1, &bufferID);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferID);
+        glBufferStorage(GL_SHADER_STORAGE_BUFFER, bufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
+
+        // SET BINDING POINT
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, _binding, bufferID);
+    }
+
+    ~DynamicStorageBuffer()
+    {
+        glDeleteBuffers(1, &bufferID);
+    }
+
+    void GrowBuffer(uint32_t addSize)
+    {
+        // INCREASE BUFFER SIZE
+        bufferSize += addSize;
+
+        // CREATE A NEW LARGER BUFFER
+        unsigned int newBufferID;
+        glGenBuffers(1, &newBufferID);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, newBufferID);
+        glBufferStorage(GL_SHADER_STORAGE_BUFFER, bufferSize, nullptr, GL_MAP_WRITE_BIT | GL_MAP_PERSISTENT_BIT | GL_MAP_COHERENT_BIT);  
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, _binding, newBufferID);
+
+        // COPY CURRENT DATA INTO LARGER BUFFER
+        glBindBuffer(GL_COPY_READ_BUFFER, bufferID);
+        glBindBuffer(GL_COPY_WRITE_BUFFER, newBufferID);
+        glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, 0, 0, bufferSize - addSize);
+
+        // DELETE CURRENT BUFFER
+        glDeleteBuffers(1, &bufferID);
+
+        // UPDATE CURRENT BUFFER
+        bufferID = newBufferID;
+
+        // SET BINDING POINT OF NEW LARGER BUFFER
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, _binding, bufferID);
+    }
+
+    void* GetMappedBuffer(int offset, int size)
+    {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferID);
+        return glMapBufferRange(GL_SHADER_STORAGE_BUFFER, offset, size, GL_MAP_WRITE_BIT);
+    }
+
+    void UnmapBuffer()
+    {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, bufferID);
+        glUnmapBuffer(GL_SHADER_STORAGE_BUFFER); 
+    }
+
+    void DeleteBuffer()
+    {
+        glDeleteBuffers(1, &bufferID);
+    }
+
+    uint32_t BufferSize()
+    {
+        return bufferSize;
+    }
+
+private:
+    int _binding;
+    unsigned int bufferID;
+    uint32_t bufferSize;
+};

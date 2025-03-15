@@ -17,7 +17,7 @@
 #include "render_system.h"
 #include "shader.h"
 #include "model_manager.h"
-#include "light.h"
+#include "light_manager.h"
 #include "debug.h"
 #include "user_interface.h"
 #include "gpu_memory_manager.h"
@@ -83,9 +83,6 @@ int main()
     std::string raycastShaderSource = LoadShaderFromFile("./shaders/raycast.shader");
     unsigned int raycastShader = CreateComputeShader(raycastShaderSource);
 
-    // CREATE GPU MEMORY MANAGER
-    GPU_Memory gpu_memory(pathtraceShader);
-
     // CREATE CAMERA
     Camera camera(pathtraceShader);
 
@@ -96,27 +93,17 @@ int main()
     UserInterface UI(pathtraceShader);
 
     // CREATE A MODEL MANAGER
-    ModelManager modelManager;
+    ModelManager modelManager(pathtraceShader);
 
     // CREATE A LIGHT MANAGER
-    LightManager lightManager;
+    LightManager lightManager(pathtraceShader);
 
-
-    // }----------{ LOAD 3D MESHES }----------{
-    std::vector<Material> materials;
-    std::vector<Texture> textures;
-
-    // CREATE DEFAULT MATERIAL
-    Material defaultMat;
-    materials.push_back(defaultMat);
-    gpu_memory.AddMaterialToScene(materials[0].data);
+    // CREATE A MATERIAL MANAGER
+    MaterialManager materialManager(pathtraceShader); 
 
     // LOAD DEMONSTRATION MODELS
     modelManager.LoadModel("./models/vw.obj");
     modelManager.LoadModel("./models/lion.obj");
-    // }----------{ LOAD 3D MESHES }----------{
-
-
 
 
 
@@ -265,7 +252,6 @@ int main()
             cursorOverViewport, 
             renderSystem.GetFrameBufferTextureID(),
             camera, 
-            gpu_memory, 
             modelManager, 
             renderSystem, 
             raycastShader
@@ -277,15 +263,15 @@ int main()
         float remainingHeight = VIEWPORT_HEIGHT - transformPanelHeight;  
         float objectsPanelHeight = remainingHeight * 0.5f;  
         float lightsPanelHeight = remainingHeight * 0.5f;  
-        UI.RenderObjectsPanel(modelManager, gpu_memory, objectsPanelHeight);
-        UI.RenderLightsPanel(lightManager, gpu_memory, lightsPanelHeight);
-        UI.RenderTransformPanel(modelManager, lightManager, gpu_memory, transformPanelHeight);
+        UI.RenderObjectsPanel(modelManager, objectsPanelHeight);
+        UI.RenderLightsPanel(lightManager, lightsPanelHeight);
+        UI.RenderTransformPanel(modelManager, lightManager, transformPanelHeight);
         UI.EndSidebar();
 
         ImGui::Dummy(ImVec2(1, 0));
         UI.RenderModelExplorer(modelManager);
-        UI.RenderMaterialExplorer(materials, textures, gpu_memory, renderSystem);
-        UI.RenderTexturesPanel(textures);
+        UI.RenderMaterialExplorer(materialManager, renderSystem);
+        UI.RenderTexturesPanel(materialManager);
         UI.EndAppLayout();
         glViewport(0, 0, VIEWPORT_WIDTH, VIEWPORT_HEIGHT); // RESET GL VIEWPORT
         // }----------{ APP LAYOUT ENDS   }----------{

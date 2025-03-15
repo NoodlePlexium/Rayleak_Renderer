@@ -117,38 +117,3 @@ struct Spotlight
     }
 };
 
-class LightManager
-{
-public:
-    std::vector<DirectionalLight> directionalLights;
-    std::vector<PointLight> pointLights;
-    std::vector<Spotlight> spotlights;
-
-    std::vector<std::string> directionalLightNames;
-    std::vector<std::string> pointLightNames;
-    std::vector<std::string> spotlightNames;
-
-    void AddDirectionalLight()
-    {
-        DirectionalLight light;
-        directionalLights.push_back(light);
-        std::string name = "directional light";
-        directionalLightNames.push_back(name);
-    }
-
-    void AddPointLight()
-    {
-        PointLight light;
-        pointLights.push_back(light);
-        std::string name = "point light";
-        pointLightNames.push_back(name);
-    }
-
-    void AddSpotlight()
-    {
-        Spotlight light;
-        spotlights.push_back(light);
-        std::string name = "spotlight";
-        spotlightNames.push_back(name);
-    }
-};

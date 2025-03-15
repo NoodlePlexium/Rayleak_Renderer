@@ -9,7 +9,7 @@
 #include <cstdint>
 
 // PROJECT HEADERS
-#include "gpu_memory_manager.h"
+#include "material_manager.h"
 
 
 class UserInterface
@@ -50,6 +50,7 @@ public:
     void LoadIcons()
     {
         OBJ_Icon.LoadImage("./icons/obj_icon.png");
+        Blank_Texture.LoadImage("./icons/blank.png");
     }
 
     void BeginAppLayout()
@@ -119,7 +120,7 @@ public:
         ImGui::PopStyleColor();
     }
 
-    void RenderViewportPanel(int width, int height, float frameTime, bool cursorOverViewport, unsigned int frameBufferTextureID, Camera& camera, GPU_Memory& gpu_memory, ModelManager& modelManager, RenderSystem& renderSystem, const unsigned int &raycastShader)
+    void RenderViewportPanel(int width, int height, float frameTime, bool cursorOverViewport, unsigned int frameBufferTextureID, Camera& camera, ModelManager& modelManager, RenderSystem& renderSystem, const unsigned int &raycastShader)
     {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::BeginChild("Viewport", ImVec2(width, height), true);
@@ -141,18 +142,12 @@ public:
         {
             if (cursorOverViewport)
             {
-                std::cout << "Model dragged into scene" << std::endl;
                 int instanceID = modelManager.CreateModelInstance(draggedModelIndex);
-                gpu_memory.AddModelToScene(&modelManager.models[modelManager.modelInstances[instanceID]]);
+                modelManager.AddModelToScene(&modelManager.modelInstances[instanceID]);
                 restartRender = true;
-            }
-            else
-            {
-                std::cout << "Model dropped" << std::endl;
             }
             draggedModelIndex = -1;
             draggedModelReleased = false;
-            std::cout << "model " << draggedModelIndex << " selected\n";
         }
 
         if (releasingDraggedMaterial)
@@ -163,13 +158,12 @@ public:
 
         
                 int y = height - mousePos.y + 3;
-                int meshIndex = renderSystem.Raycast(raycastShader, camera, gpu_memory.meshCount, (int)mousePos.x, y);
+                int meshIndex = renderSystem.Raycast(raycastShader, camera, modelManager.meshCount, (int)mousePos.x, y);
                 
                 std::cout << "mesh index: " << meshIndex << std::endl; 
-                if (meshIndex >= 0 && meshIndex < gpu_memory.meshCount)
+                if (meshIndex >= 0 && meshIndex < modelManager.meshCount)
                 {
-                    gpu_memory.UpdateMeshMaterial(
-                        modelManager.meshes[meshIndex], 
+                    modelManager.UpdateMeshMaterial( 
                         static_cast<uint32_t>(meshIndex), 
                         static_cast<uint32_t>(draggedMaterialIndex)
                     );
@@ -258,7 +252,7 @@ public:
         ImGui::BeginChild("sidebar", ImVec2(0, height), true);
     }
 
-    void RenderObjectsPanel(ModelManager& modelManager, GPU_Memory& gpu_memory, float height)
+    void RenderObjectsPanel(ModelManager& modelManager, float height)
     {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA("#000000"));
         ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
@@ -277,7 +271,7 @@ public:
         int meshIndex = 0;
         for (int i=0; i<modelManager.modelInstances.size(); ++i)
         {
-            Model* model = &modelManager.models[modelManager.modelInstances[i]];
+            Model* model = &modelManager.modelInstances[i];
             if (model->inScene)
             {   
                 // MODEL DROPDOWN
@@ -285,8 +279,10 @@ public:
                 ImGui::PushStyleColor(ImGuiCol_Header, HexToRGBA(BORDER));
                 if (ImGui::CollapsingHeader(model->name, ImGuiTreeNodeFlags_DefaultOpen)) 
                 {
-                    for (const Mesh* mesh : model->submeshPtrs)
+                    for (int j=0; j<model->submeshPtrs.size(); j++)
                     {
+                        Mesh* mesh = model->submeshPtrs[j];
+
                         // BUTTON COLOUR
                         bool isSelectedMesh;
                         ImVec4 buttonColour = HexToRGBA(BUTTON);
@@ -298,16 +294,29 @@ public:
 
                         // MESH BUTTON
                         ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.0f, 0.5f));
-                        std::string buttonID = "Mesh Button" + std::to_string(i);
+                        std::string buttonID = "Mesh Button" + std::to_string(meshIndex);
                         ImGui::PushID(buttonID.c_str());
                         ImGui::PushStyleColor(ImGuiCol_Button, buttonColour);
-                        if (ImGui::Button(mesh->name.c_str(), ImVec2(SpaceX(), 0)))
+                        if (ImGui::Button(mesh->name.c_str(), ImVec2(SpaceX()-25, 0)))
                         {
                             selectedMesh = meshIndex;
                             selectedDirectionalLight = -1;
                             selectedPointLight = -1;
                             selectedSpotlight = -1;
                         }
+                        ImGui::PopStyleVar();
+
+                        // DELETE MESH BUTTON
+                        ImGui::SameLine();
+                        ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.5f, 0.5f));
+                        if (ImGui::Button("X", ImVec2(SpaceX(), 0)))
+                        {
+                            if (selectedMesh == meshIndex) selectedMesh = -1;
+                            else if (selectedMesh != -1 && selectedMesh > meshIndex) selectedMesh--;
+                            modelManager.DeleteInstanceMesh(i, j, meshIndex);
+                            restartRender = true;
+                        }
+
                         meshIndex++;
                         ImGui::PopID();
                         ImGui::PopStyleVar();
@@ -331,7 +340,7 @@ public:
         ImGui::PopStyleVar(2);
     }
 
-    void RenderLightsPanel(LightManager &lightManager, GPU_Memory& gpu_memory, float height)
+    void RenderLightsPanel(LightManager &lightManager, float height)
     {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA("#000000"));
         ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
@@ -348,8 +357,6 @@ public:
         if (ImGui::Button("Dir", ImVec2(SpaceX() / 3.0f, 0)))
         {
             lightManager.AddDirectionalLight();
-            DirectionalLight& light = lightManager.directionalLights[lightManager.directionalLights.size()-1]; 
-            gpu_memory.AddDirectionalLightToScene(light, lightManager.directionalLights.size());
             restartRender = true;
         }
 
@@ -357,8 +364,6 @@ public:
         if (ImGui::Button("Point", ImVec2(SpaceX() * 0.5f, 0)))
         {
             lightManager.AddPointLight();
-            PointLight& light = lightManager.pointLights[lightManager.pointLights.size()-1]; 
-            gpu_memory.AddPointLightToScene(light, lightManager.pointLights.size());
             restartRender = true;
         }
 
@@ -366,8 +371,6 @@ public:
         if (ImGui::Button("Spot", ImVec2(SpaceX(), 0)))
         {
             lightManager.AddSpotlight();
-            Spotlight& light = lightManager.spotlights[lightManager.spotlights.size()-1]; 
-            gpu_memory.AddSpotlightToScene(light, lightManager.spotlights.size());
             restartRender = true;
         }
         ImGui::EndChild();
@@ -381,20 +384,32 @@ public:
         ImGui::Dummy(ImVec2(1, GAP));
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, GAP));
 
+        int lightID = 0;
+
         // CREATE DIRECTIONAL LIGHT BUTTONS
         for (int i=0; i<lightManager.directionalLights.size(); ++i)
         {
             ImVec4 buttonColour = HexToRGBA(BUTTON);
             if (selectedDirectionalLight == i) buttonColour = HexToRGBA(SELECTED);
 
-            ImGui::PushID(i);
+            ImGui::PushID(lightID++);
             ImGui::PushStyleColor(ImGuiCol_Button, buttonColour);
-            if (ImGui::Button(lightManager.directionalLightNames[i].c_str(), ImVec2(SpaceX(), 0)))
+            if (ImGui::Button(lightManager.directionalLightNames[i].c_str(), ImVec2(SpaceX() - 25, 0)))
             {
                 selectedDirectionalLight = i;
                 selectedPointLight = -1;
                 selectedSpotlight = -1;
                 selectedMesh = -1;
+            }
+
+            // DELETE LIGHT BUTTON
+            ImGui::SameLine();
+            if (ImGui::Button("X", ImVec2(SpaceX(), 0)))
+            {
+                if (selectedDirectionalLight == i) selectedDirectionalLight = -1;
+                else if (selectedDirectionalLight != -1 && selectedDirectionalLight > i) selectedDirectionalLight--;
+                lightManager.DeleteDirectionalLight(i);
+                restartRender = true;
             }
             ImGui::PopStyleColor();
             ImGui::PopID();
@@ -406,14 +421,24 @@ public:
             ImVec4 buttonColour = HexToRGBA(BUTTON);
             if (selectedPointLight == i) buttonColour = HexToRGBA(SELECTED);
 
-            ImGui::PushID(i);
+            ImGui::PushID(lightID++);
             ImGui::PushStyleColor(ImGuiCol_Button, buttonColour);
-            if (ImGui::Button(lightManager.pointLightNames[i].c_str(), ImVec2(SpaceX(), 0)))
+            if (ImGui::Button(lightManager.pointLightNames[i].c_str(), ImVec2(SpaceX()-25, 0)))
             {
                 selectedDirectionalLight = -1;
                 selectedPointLight = i;
                 selectedSpotlight = -1;
                 selectedMesh = -1;
+            }
+
+            // DELETE LIGHT BUTTON
+            ImGui::SameLine();
+            if (ImGui::Button("X", ImVec2(SpaceX(), 0)))
+            {
+                if (selectedPointLight == i) selectedPointLight = -1;
+                else if (selectedPointLight != -1 && selectedPointLight > i) selectedPointLight--;
+                lightManager.DeletePointLight(i);
+                restartRender = true;
             }
             ImGui::PopStyleColor();
             ImGui::PopID();
@@ -425,14 +450,23 @@ public:
             ImVec4 buttonColour = HexToRGBA(BUTTON);
             if (selectedSpotlight == i) buttonColour = HexToRGBA(SELECTED);
 
-            ImGui::PushID(i);
+            ImGui::PushID(lightID++);
             ImGui::PushStyleColor(ImGuiCol_Button, buttonColour);
-            if (ImGui::Button(lightManager.spotlightNames[i].c_str(), ImVec2(SpaceX(), 0)))
+            if (ImGui::Button(lightManager.spotlightNames[i].c_str(), ImVec2(SpaceX()-25, 0)))
             {
                 selectedDirectionalLight = -1;
                 selectedPointLight = -1;
                 selectedSpotlight = i;
                 selectedMesh = -1;
+            }
+            // DELETE LIGHT BUTTON
+            ImGui::SameLine();
+            if (ImGui::Button("X", ImVec2(SpaceX(), 0)))
+            {
+                if (selectedSpotlight == i) selectedSpotlight = -1;
+                else if (selectedSpotlight != -1 && selectedSpotlight > i) selectedSpotlight--;
+                lightManager.DeleteSpotlight(i);
+                restartRender = true;
             }
             ImGui::PopStyleColor();
             ImGui::PopID();
@@ -446,7 +480,7 @@ public:
         ImGui::PopStyleVar(2);
     }
 
-    void RenderTransformPanel(ModelManager& modelManager, LightManager& lightManager, GPU_Memory& gpu_memory, float height)
+    void RenderTransformPanel(ModelManager& modelManager, LightManager& lightManager, float height)
     {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA("#000000"));
         ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
@@ -474,7 +508,7 @@ public:
             restartRender |= changed;
 
             mesh->UpdateInverseTransformMat();
-            if (changed) gpu_memory.UpdateMeshTransform(mesh, selectedMesh);
+            if (changed) modelManager.UpdateMeshTransform(mesh, selectedMesh);
         }
 
         // IF DIRECTIONAL LIGHT IS SELECTED
@@ -492,7 +526,7 @@ public:
 
 
             light->TransformDirection();
-            if (changed) gpu_memory.UpdateDirectionalLight(light, selectedDirectionalLight);
+            if (changed) lightManager.UpdateDirectionalLight(selectedDirectionalLight);
         }
 
         // IF POINT LIGHT IS SELECTED
@@ -508,7 +542,7 @@ public:
         
             restartRender |= changed;
 
-            if (changed) gpu_memory.UpdatePointLight(light, selectedPointLight);
+            if (changed) lightManager.UpdatePointLight(selectedPointLight);
         }
 
         // IF SPOTLIGHT IS SELECTED
@@ -528,7 +562,7 @@ public:
             restartRender |= changed;
 
             light->TransformDirection();
-            if (changed) gpu_memory.UpdateSpotlight(light, selectedSpotlight);
+            if (changed) lightManager.UpdateSpotlight(selectedSpotlight);
         }
 
         ImGui::PopStyleVar();
@@ -588,7 +622,7 @@ public:
         ImGui::PopStyleVar();
     }
 
-    void RenderMaterialExplorer(std::vector<Material>& materials, std::vector<Texture>& textures, GPU_Memory& gpu_memory, RenderSystem& renderSystem)
+    void RenderMaterialExplorer(MaterialManager& materialManager, RenderSystem& renderSystem)
     {   
         // MATERIAL EXPLORER PANEL
         ImGui::SameLine();
@@ -598,7 +632,7 @@ public:
         ImGui::BeginChild("Material Explorer", ImVec2(SpaceX() * 0.6f, SpaceY()), true);
         
         // MATERIAL EXPLORER TITLE BAR
-        MaterialPanelHeader(materials, gpu_memory, renderSystem);
+        MaterialPanelHeader(materialManager, renderSystem);
 
         float materialEditorWidth = 280;
 
@@ -609,7 +643,7 @@ public:
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + MATERIAL_PANEL_GAP);
         float hSpace = SpaceX();
         float usedHSpace = MATERIAL_PANEL_GAP;
-        for (int i=1; i<materials.size(); i++)
+        for (int i=1; i<materialManager.materials.size(); i++)
         {   
             if (usedHSpace + MODEL_THUMBNAIL_SIZE < hSpace && i > 1) { ImGui::SameLine(); }
             else if (i > 1)
@@ -617,7 +651,7 @@ public:
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + MATERIAL_PANEL_GAP);
                 usedHSpace = MATERIAL_PANEL_GAP;
             }
-            MaterialComponent(materials[i], i);
+            MaterialComponent(materialManager.materials[i], i);
             usedHSpace += MODEL_THUMBNAIL_SIZE + MATERIAL_PANEL_GAP;
         }
         ImGui::Dummy(ImVec2(1,0));
@@ -635,9 +669,9 @@ public:
         if (selectedMaterialIndex != -1)
         {   
             bool updatedMaterial = false;
-            MaterialData& materialData = materials[selectedMaterialIndex].data;
+            MaterialData& materialData = materialManager.materials[selectedMaterialIndex].data;
             std::string baseID = std::to_string(selectedMaterialIndex).c_str();
-            PaddedText(materials[selectedMaterialIndex].name, 5);
+            PaddedText(materialManager.materials[selectedMaterialIndex].name, 5);
 
             // MATERIAL COLOUR PICKER
             updatedMaterial  |= ColourSelectAttribute("colour", "###Material Colour", "### Material Colour Button", materialData.colour, materialColourPopupOpen, GAP, 0);
@@ -656,20 +690,20 @@ public:
             else materialData.refractive = 0;
 
             ImGui::Dummy(ImVec2(0, 0)); ImGui::SameLine();
-            MaterialTextureSlot("Albedo Map", materials[selectedMaterialIndex], textures, 0, updatedMaterial);
+            MaterialTextureSlot("Albedo Map", selectedMaterialIndex, materialManager, 0, updatedMaterial);
             ImGui::Dummy(ImVec2(0, 0)); ImGui::SameLine();
-            MaterialTextureSlot("Normal Map", materials[selectedMaterialIndex], textures, 1, updatedMaterial);
+            MaterialTextureSlot("Normal Map", selectedMaterialIndex, materialManager, 1, updatedMaterial);
             ImGui::Dummy(ImVec2(0, 0)); ImGui::SameLine();
-            MaterialTextureSlot("Roughness Map", materials[selectedMaterialIndex], textures, 2, updatedMaterial);
+            MaterialTextureSlot("Roughness Map", selectedMaterialIndex, materialManager, 2, updatedMaterial);
 
 
             if (updatedMaterial) 
             {
                 // UPDATE MATERIAL SETTINGS ON THE GPU
-                gpu_memory.UpdateMaterial(materialData, selectedMaterialIndex);
+                materialManager.UpdateMaterial(materialData, selectedMaterialIndex);
 
                 // RERENDER MATERIAL THUMBNAIL
-                renderSystem.RenderThumbnail(materials[selectedMaterialIndex], MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
+                renderSystem.RenderThumbnail(materialManager.materials[selectedMaterialIndex], MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
 
                 // RESTART RENDER
                 restartRender = true;
@@ -687,14 +721,14 @@ public:
         ImGui::PopStyleVar();
     }
 
-    void RenderTexturesPanel(std::vector<Texture> &textures)
+    void RenderTexturesPanel(MaterialManager &materialManager)
     {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Border, HexToRGBA(BORDER));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0)); 
         ImGui::SameLine();
         ImGui::BeginChild("Texture Panel", ImVec2(0, SpaceY()), true);
-        TexturePanelHeader(textures);
+        TexturePanelHeader(materialManager);
 
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(TEXTURE_PANEL_GAP, TEXTURE_PANEL_GAP));
         ImGui::BeginChild("Textures Container", ImVec2(SpaceX(), SpaceY()), false);
@@ -702,7 +736,7 @@ public:
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + TEXTURE_PANEL_GAP);
         float hSpace = SpaceX();
         float usedHSpace = TEXTURE_PANEL_GAP;
-        for (int i=0; i<textures.size(); i++)
+        for (int i=0; i<materialManager.textures.size(); i++)
         {   
             if (usedHSpace + TEXTURE_THUMBNAIL_SIZE < hSpace && i > 0) 
             {
@@ -713,7 +747,7 @@ public:
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + TEXTURE_PANEL_GAP);
                 usedHSpace = TEXTURE_PANEL_GAP;
             }
-            TextureComponent(textures[i], i);
+            TextureComponent(materialManager.textures[i], i);
             usedHSpace += TEXTURE_THUMBNAIL_SIZE + TEXTURE_PANEL_GAP;
         }
 
@@ -732,6 +766,7 @@ private:
     ImFont* fontBody;
     ImFont* fontHeader;
     Texture OBJ_Icon;
+    Texture Blank_Texture;
 
     // STYLING
     const char* BORDER = "#3d444d";
@@ -1143,7 +1178,7 @@ private:
             colour.y = col[1];
             colour.z = col[2];
 
-            if (!ImGui::IsAnyItemHovered() && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && ImGui::IsMouseClicked(0)) {
+            if (!ImGui::IsAnyItemHovered() && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) && (ImGui::IsMouseClicked(0) || ImGui::IsMouseClicked(1))) {
                 colourPopupOpen = false; 
             }
 
@@ -1300,7 +1335,7 @@ private:
     }
 
     // }----------{ MATERIAL EXPLORER PANEL }----------{
-    void MaterialPanelHeader(std::vector<Material>& materials, GPU_Memory& gpu_memory, RenderSystem& renderSystem)
+    void MaterialPanelHeader(MaterialManager &materialManager, RenderSystem& renderSystem)
     {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0)); 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(BORDER));
@@ -1317,13 +1352,7 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Create Material", ImVec2(120.0f, 0)))
         {   
-            Material newMaterial;
-            newMaterial.CreateThumbnailFrameBuffer(MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
-            renderSystem.RenderThumbnail(newMaterial, MATERIAL_THUMBNAIL_SIZE, MATERIAL_THUMBNAIL_SIZE);
-            materials.push_back(newMaterial);
-            std::cout << "material count: " << materials.size() << std::endl;
-            gpu_memory.AddMaterialToScene(newMaterial.data);
-            std::cout << "create material pressed" << std::endl;
+            materialManager.CreateMaterial(MATERIAL_THUMBNAIL_SIZE, renderSystem);
         }
         ImGui::Unindent();
         ImGui::Dummy(ImVec2(1, 3));
@@ -1392,12 +1421,13 @@ private:
         ImGui::PopStyleColor();
     }
 
-    void MaterialTextureSlot(std::string label, Material& material, std::vector<Texture>& textures, int textureType, bool &updatedMaterial)
+    void MaterialTextureSlot(std::string label, int materialIndex, MaterialManager &materialManager, int textureType, bool &updatedMaterial)
     {   
-        unsigned int textureID = 0;
-        if (textureType == 0) textureID = material.albedoID;
-        if (textureType == 1) textureID = material.normalID;
-        if (textureType == 2) textureID = material.roughnessID;
+        unsigned int textureID = Blank_Texture.textureID;
+        Material &material = materialManager.materials[materialIndex];
+        if (textureType == 0 && (material.data.textureFlags & (1 << 0)) != 0) textureID = material.albedoID;
+        if (textureType == 1 && (material.data.textureFlags & (1 << 1)) != 0) textureID = material.normalID;
+        if (textureType == 2 && (material.data.textureFlags & (1 << 2)) != 0) textureID = material.roughnessID;
 
         std::string uniqueID = std::string("Material Texture Slot") + label;
         std::string buttonID = std::string("Material Texture Slot Button") + label;
@@ -1430,7 +1460,7 @@ private:
         // IF DROP DRAGGED TEXTURE INTO SLOT
         if (mouseOverThumbnail && releasingDraggedTexture)
         {
-            Texture& texture = textures[draggedTextureIndex];
+            Texture& texture = materialManager.textures[draggedTextureIndex];
             if (textureType == 0) {
                 material.UpdateAlbedo(texture.textureID, texture.textureHandle);
             }
@@ -1448,7 +1478,7 @@ private:
             std::cout << "dropping texture into slot\n";
         }
 
-        // MODEL THUMBNAIL
+        // TEXTURE SLOT 
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
         ImGui::PushStyleColor(ImGuiCol_Button, borderColour);
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, hoverColour);
@@ -1468,7 +1498,7 @@ private:
     }
 
     // }----------{ TEXTURE PANEL }----------{
-    void TexturePanelHeader(std::vector<Texture> &textures)
+    void TexturePanelHeader(MaterialManager &materialManager)
     {
         ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0)); 
         ImGui::PushStyleColor(ImGuiCol_ChildBg, HexToRGBA(BORDER));
@@ -1485,15 +1515,7 @@ private:
         ImGui::SameLine();
         if (ImGui::Button("Import Texture", ImVec2(120.0f, 0)))
         {   
-            // ADAPTED FROM USER tinyfiledialogs https://stackoverflow.com/questions/6145910/cross-platform-native-open-save-file-dialogs
-            const char *lFilterPatterns[2] = { "*.png", "*.jpg" };
-            const char* selection = tinyfd_openFileDialog("Import Image", "C:\\", 2,lFilterPatterns, NULL, 0 );
-            if (selection)
-            {
-                Texture newTexture;
-                newTexture.LoadImage(selection);
-                textures.push_back(newTexture);
-            }
+            materialManager.ImportTexture();
         }
         ImGui::Unindent();
         ImGui::Dummy(ImVec2(1, 3));

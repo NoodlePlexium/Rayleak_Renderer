@@ -339,7 +339,7 @@ public:
 private:
 
     uint32_t currentBounces;
-    float renderBudget = 10;
+    float renderBudget = 15;
     float resolutionScale = 1.0f;
     uint32_t frameCount = 0;
 

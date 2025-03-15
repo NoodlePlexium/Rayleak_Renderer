@@ -129,12 +129,6 @@ struct Material
     unsigned int FBO, RBO, FrameBufferTextureID;
     char name[32];
     char tempName[32];
-
-    Material()
-    {
-        strcpy_s(name, 32, "material");
-        strcpy_s(tempName, 32, "material");
-    }
     
     void CreateThumbnailFrameBuffer(int width, int height)
     {

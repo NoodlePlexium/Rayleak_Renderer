@@ -72,8 +72,6 @@ struct Mesh
 
     BVH_Node* bvhNodes;
     uint32_t nodesUsed = 1;
-    uint32_t materialIndex = 0;
-
     glm::vec3 aabbMin;
     glm::vec3 aabbMax;
 
