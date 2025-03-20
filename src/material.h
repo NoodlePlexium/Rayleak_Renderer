@@ -4,9 +4,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <GL/glew.h>
-#include "glm/glm.hpp"
-#include "stb_image.h"
-#include "stb_image_write.h"
+#include "../lib/glm/glm.hpp"
+#include "../lib/stb_image.h"
+#include "../lib/stb_image_write.h"
 #include "debug.h"
 
 // STANDARD LIBRARY

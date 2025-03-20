@@ -1,6 +1,6 @@
 #pragma once
 #include <GL/glew.h>
-#include "glm/gtc/matrix_transform.hpp"
+#include "../lib/glm/gtc/matrix_transform.hpp"
 #include <string>
 #include "shader.h"
 #include "mesh.h"

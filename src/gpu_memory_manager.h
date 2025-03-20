@@ -2,7 +2,7 @@
 
 // EXTERNAL LIBRARIES
 #include <GL/glew.h>
-#include "glm/gtc/type_ptr.hpp"
+#include "../lib/glm/gtc/type_ptr.hpp"
 
 // STANDARD LIBRARY
 #include <vector>

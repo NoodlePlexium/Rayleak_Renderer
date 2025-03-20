@@ -1,5 +1,6 @@
 /lib/glew/*
 /lib/glfw/*
+/lib/glm/*
 /lib/imgui/*
 /src/glm/*
 /textures/*

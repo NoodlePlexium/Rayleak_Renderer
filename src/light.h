@@ -1,5 +1,5 @@
 #pragma once
-#include "glm/glm.hpp"
+#include "../lib/glm/glm.hpp"
 
 struct DirectionalLight
 {

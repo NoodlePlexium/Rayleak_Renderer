@@ -4,7 +4,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <imgui.h>
-#include "./glm/glm.hpp"
+#include "../lib/glm/glm.hpp"
 
 // STANDARD LIBRARY
 #include <iostream>

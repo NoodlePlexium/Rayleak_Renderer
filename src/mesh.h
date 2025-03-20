@@ -3,10 +3,10 @@
 // EXTERNAL LIBRARIES
 #define TINYOBJLOADER_IMPLEMENTATION
 #define TINYOBJLOADER_USE_MAPBOX_EARCUT
-#include "tiny_obj_loader.h"
-#include "glm/glm.hpp"
-#include "glm/gtc/matrix_transform.hpp"
-#include "glm/gtc/constants.hpp"
+#include "../tiny_obj_loader.h"
+#include "../lib/glm/glm.hpp"
+#include "../lib/glm/gtc/matrix_transform.hpp"
+#include "../lib/glm/gtc/constants.hpp"
 
 // STANDARD LIBRARY
 #include <vector>
