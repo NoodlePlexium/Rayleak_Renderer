@@ -24,7 +24,7 @@ public:
         thumbnailShader = CreateRasterShader(vertexShaderSource, fragmentShaderSource);
 
         // LOAD SPHERE MODEL
-        LoadThumbnailMesh("./models/ThumbnailSphere.obj", thumbnailMesh);
+        LoadThumbnailMesh("./thumbnail/ThumbnailSphere.obj", thumbnailMesh);
 
         // MODEL VIEW PROJECTION MATRIX
         MVP = glm::ortho(-0.5f, 0.5f, -0.5f, 0.5f, 1.0f, -1.0f);
