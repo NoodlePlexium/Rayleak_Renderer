@@ -77,14 +77,12 @@ public:
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
             {
-                std::cout << "Releasing dragged model" << std::endl;
                 draggedModelReleased = true;
             }
         }
 
         if (releasingDraggedTexture)
         {
-            std::cout << "Texture dropped" << std::endl;
             draggedTextureIndex = -1;
             releasingDraggedTexture = false;
             droppedTextureIntoSlot = false;
@@ -96,7 +94,6 @@ public:
             
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
             {
-                std::cout << "Releasing dragged texture" << std::endl;
                 releasingDraggedTexture = true;
             }
         }
@@ -106,7 +103,6 @@ public:
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
             if (!ImGui::IsMouseDown(ImGuiMouseButton_Left))
             {
-                std::cout << "Releasing dragged material" << std::endl;
                 releasingDraggedMaterial = true;
             }
         }
@@ -160,7 +156,6 @@ public:
                 int y = height - mousePos.y + 3;
                 int meshIndex = renderSystem.Raycast(raycastShader, camera, modelManager.meshCount, (int)mousePos.x, y);
                 
-                std::cout << "mesh index: " << meshIndex << std::endl; 
                 if (meshIndex >= 0 && meshIndex < modelManager.meshCount)
                 {
                     modelManager.UpdateMeshMaterial( 
@@ -1389,7 +1384,6 @@ private:
             ImVec2(MODEL_THUMBNAIL_SIZE-4, MODEL_THUMBNAIL_SIZE-2)))
         {
             selectedMaterialIndex = i;
-            std::cout << "selected material: " << selectedMaterialIndex << std::endl;
         }
         ImGui::PopStyleVar();
         ImGui::PopStyleColor(3);
@@ -1475,7 +1469,6 @@ private:
             droppedTextureIntoSlot = true;
             textureID = texture.textureID;
             updatedMaterial = true;
-            std::cout << "dropping texture into slot\n";
         }
 
         // TEXTURE SLOT 

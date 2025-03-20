@@ -106,7 +106,7 @@ public:
 
         if (itemPartitions.size() == 0) return 0;
 
-        for (int i = 0; i < itemPartitions.size() - 1; i++)
+        for (int i=0; i<itemPartitions.size()-1; i++)
         {
             ItemPartition &item = itemPartitions[i];
             ItemPartition &nextItem = itemPartitions[i + 1];
@@ -243,9 +243,6 @@ public:
         // COPY SECOND PARTITION OF CURRENT DATA INTO NEW BUFFER
         glCopyBufferSubData(GL_COPY_READ_BUFFER, GL_COPY_WRITE_BUFFER, start + size, start, usedCapacity - start - size);
 
-        //std::cout << "copying first slice to position: " << 0 << " copying " << start << " bytes" << std::endl;
-        //std::cout << "copying second slice to position: " << start << " copying " << usedCapacity - start - size << " bytes" <<  std::endl;
-
         // DELETE CURRENT BUFFER
         glDeleteBuffers(1, &bufferID);
 
@@ -254,8 +251,6 @@ public:
 
         // DECREASE USAGE
         usedCapacity -= size;
-
-       // std::cout << "removed size: " << size << " buffer size: " << bufferSize << " used capacity: " << usedCapacity << "\n";
     }
 
     void* GetMappedBuffer(int offset, int size)

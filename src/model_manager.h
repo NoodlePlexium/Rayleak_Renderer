@@ -118,8 +118,6 @@ public:
 
         uint32_t meshId = modelInstance.meshIDs[submeshIndex];
 
-        std::cout << "deleting item: " << meshId << std::endl;
-
         // DELETE MESH VERTEX DATA
         VertexBuffer.DeleteItem(meshId);
         
@@ -141,11 +139,6 @@ public:
         // UPDATE MESH COUNT UNIFORM
         glUseProgram(pathtraceShader);
         glUniform1i(glGetUniformLocation(pathtraceShader, "u_meshCount"), meshCount);
-
-        for (int i=0; i<VertexBuffer.itemPartitions.size(); i++)
-        {
-            std::cout << "vertex buffer item start: " << VertexBuffer.itemPartitions[i].start << " size: " << VertexBuffer.itemPartitions[i].size << std::endl;
-        }
     }
 
     int CreateModelInstance(int modelIndex)
@@ -204,14 +197,6 @@ public:
             IndexBuffer.OccupyRegion(mesh->indices.size() * sizeof(uint32_t), id);
             BvhBuffer.OccupyRegion(mesh->nodesUsed * sizeof(BVH_Node), id);
         }
-
-        for (int i=0; i<VertexBuffer.itemPartitions.size(); i++)
-        {
-            std::cout << "vertex buffer item start: " << VertexBuffer.itemPartitions[i].start << " size: " << VertexBuffer.itemPartitions[i].size << std::endl;
-        }
-
-        std::cout << "mesh count: " << meshCount << std::endl;
-        std::cout << "buffer size: "  << VertexBuffer.BufferSize() << std::endl;
 
         // BUFFER MAPPINGS
         void* mappedVertexBuffer;
