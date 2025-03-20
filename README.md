@@ -1,3 +1,3 @@
 ### Platform Requirements:
 - Windows 10/11
-- OpenGL Bindless Texture Support
+- OpenGL Bindless Textures
