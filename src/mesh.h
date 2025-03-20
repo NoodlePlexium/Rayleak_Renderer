@@ -235,12 +235,12 @@ struct Mesh
 
     void UpdateInverseTransformMat()
     {
-        glm::mat4 transform = glm::mat4(1.0f); // IDENTITY MATRIX
-        transform = glm::translate(transform, position); // TRANSLATE
-        transform = glm::rotate(transform, glm::radians(rotation.x), glm::vec3(1, 0, 0));  // ROTATE
+        glm::mat4 transform = glm::mat4(1.0f); 
+        transform = glm::translate(transform, position);
+        transform = glm::rotate(transform, glm::radians(rotation.x), glm::vec3(1, 0, 0));  
         transform = glm::rotate(transform, glm::radians(rotation.y), glm::vec3(0, 1, 0));
         transform = glm::rotate(transform, glm::radians(rotation.z), glm::vec3(0, 0, 1)); 
-        transform = glm::scale(transform, scale); // SCALE
-        inverseTransform = glm::inverse(transform); // INVERT
+        transform = glm::scale(transform, scale); 
+        inverseTransform = glm::inverse(transform);
     }
 };
