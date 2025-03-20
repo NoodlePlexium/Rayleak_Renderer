@@ -24,7 +24,7 @@
 #include "camera.h"
 #include "material.h"
 
-int main()
+int main() 
 {
     float WIDTH = 1400;
     float HEIGHT = 900;
@@ -100,12 +100,6 @@ int main()
 
     // CREATE A MATERIAL MANAGER
     MaterialManager materialManager(pathtraceShader); 
-
-    // LOAD DEMONSTRATION MODELS
-    modelManager.LoadModel("./models/vw.obj");
-    modelManager.LoadModel("./models/lion.obj");
-
-
 
 
     // }----------{ APPLICATION LOOP }----------{

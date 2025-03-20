@@ -71,14 +71,6 @@ struct MeshPartition
     mat4x4 inverseTransform;
 };
 
-struct EmissiveTriangle
-{
-    uint index;
-    uint materialIndex;
-    float area;
-    float weight;
-};
-
 struct CameraInfo
 {
     vec3 pos;
@@ -97,13 +89,6 @@ struct Ray
 {
     vec3 origin;
     vec3 dir;
-};
-
-struct LightPathOrigin
-{
-    vec3 position;
-    vec3 dir;
-    vec3 light;
 };
 
 struct PathVertex
@@ -307,26 +292,19 @@ RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3)
     vec3 normal = normalize(v1.normal * w + v2.normal * u + v3.normal * v);  // INTERPOLATE NORMAL USING BARYCENTRIC COORDINATES
     vec3 faceNormal = normalize(cross(edge1, edge2));
 
-    // Calculate UV differences
-    vec2 deltaUV1 = vec2(v2.u, v2.v) - vec2(v1.u, v1.v);
-    vec2 deltaUV2 = vec2(v3.u, v3.v) - vec2(v1.u, v1.v);
-
-    // Calculate denominator for the tangent formula
-    float r = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
-
-    // Avoid division by zero (degenerate UVs)
-    if (abs(r) > 1e-6) {
-        float r_inv = 1.0f / r;
-        hit.tangent = normalize((edge1 * deltaUV2.y - edge2 * deltaUV1.y) * r_inv);
-    } 
-    else 
+    // CALCULATE THE TANGENT
+    vec2 dUV1 = vec2(v2.u, v2.v) - vec2(v1.u, v1.v);
+    vec2 dUV2 = vec2(v3.u, v3.v) - vec2(v1.u, v1.v);
+    float tanDenominator = dUV1.x * dUV2.y - dUV2.x * dUV1.y;
+    if (abs(tanDenominator) > 0.000001f)
     {
-        hit.tangent = vec3(1.0f, 0.0f, 0.0f);
+        float inverseDenominator = 1 / tanDenominator;
+        hit.tangent = normalize(vec3(edge1 * dUV2.y - edge2 * dUV1.y) * inverseDenominator);
     }
-
-    // Ensure orthogonality with the normal (optional but recommended)
-    hit.tangent = normalize(hit.tangent - dot(hit.tangent, hit.normal) * hit.normal);
-
+    else
+    {
+        hit.tangent = vec3(1, 0, 0);
+    }
 
     // SET HIT VALUES
     hit.frontFace = dot(ray.dir, normal) < 0.0f;
@@ -338,13 +316,12 @@ RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3)
     return hit;
 }
 
+// FROM RAY TRACING IN A WEEKEND https://raytracing.github.io/books/RayTracingInOneWeekend.html#dielectrics/refraction
 vec3 Refract(vec3 inDir, vec3 normal, float eta, float cosTheta)
 {
     vec3 rPerp = eta * (inDir + cosTheta * normal);
     float rPerpSquared = dot(rPerp, rPerp);
-
     if (rPerpSquared > 1.0f) return vec3(0.0f, 0.0f, 0.0f);
-
     vec3 rParallel = -sqrt(1 - rPerpSquared) * normal;
     return rPerp + rParallel;
 }
@@ -446,13 +423,6 @@ RayHit CastRay(Ray ray)
     return hit;
 }
 
-vec3 GetTangent(Ray ray)
-{
-    RayHit hit = CastRay(ray);
-    if (hit.hit) return hit.normal;
-    else return vec3(0,0,0);
-}
-
 bool ShadowCast(Ray ray, vec3 lightPos)
 {
     float lightDist = length(lightPos - ray.origin);
@@ -550,6 +520,7 @@ vec3 DirectionalLightContribution(vec3 position, vec3 normal, float roughness, u
                 vec3 surfaceNormal = normalize((1.0f - roughness) * normal + roughness * roughNormal);
                 float surfaceCosineFactor = max(0.0f, dot(surfaceNormal, shadowRay.dir)); 
 
+                // ACCUMULATE LIGHT
                 light += surfaceCosineFactor * (directionalLights[d].colour * directionalLights[d].brightness);
             }
         }
@@ -586,7 +557,7 @@ vec3 PointLightContribution(vec3 position, vec3 normal, float roughness, uint se
                 vec3 surfaceNormal = normalize((1.0f - roughness) * normal + roughness * roughNormal);
                 float surfaceCosineFactor = max(0.0f, dot(surfaceNormal, shadowRay.dir)); 
 
-                // Calculate the light contribution
+                // ACCUMULATE LIGHT
                 vec3 light = surfaceCosineFactor * (pointLights[p].colour * pointLights[p].brightness) / (lightDist * lightDist);
                 totalLight += light;
             }
@@ -709,6 +680,7 @@ int GeneratePath(Ray ray, uint bounces, uint pixelIndex, uint seed)
                 float random = Random(seed + b + 534805);
                 if (random > reflectProbability)
                 {
+                    // FROM RAY TRACING IN A WEEKEND https://raytracing.github.io/books/RayTracingInOneWeekend.html#dielectrics/refraction
                     float eta = hit.frontFace ? 1.0 / material.IOR : material.IOR;
                     float cosTheta = min(dot(ray.dir, hit.normal), 1.0f);
                     float sinTheta = sqrt(1.0f - cosTheta * cosTheta);
@@ -773,11 +745,12 @@ vec3 EvaluatePath(int segments, uint bounces, uint pixelIndex, uint seed)
         const int inside = cameraPathVertices[pathIndex + i].inside;
         const int refracted = cameraPathVertices[pathIndex + i].refracted;
 
+        // ANGLE COSINE FACTOR
         float cosineFactor = max(0.0f, dot(normal, incommingDir));
         if (refracted == 1 || inside == 1) cosineFactor = 1;
 
+        // CALCULATE EXPLICIT LIGHT CONTRIBUTIONS
         vec3 directLight = vec3(0.0f, 0.0f, 0.0f);
-
         if (inside == 0 && refracted == 0)
         {
             directLight += DirectionalLightContribution(position, normal, surfaceRoughness, seed + i * 10, true);
@@ -785,6 +758,7 @@ vec3 EvaluatePath(int segments, uint bounces, uint pixelIndex, uint seed)
             directLight += SpotlightContribution(position, normal, surfaceRoughness, seed + i * 10, true);
         }
 
+        // ACCUMULATE LIGHT
         vec3 indirectLight = light * surfaceColour;
         vec3 emittedLight = surfaceColour * surfaceEmission;
         light = indirectLight + directLight * surfaceColour + emittedLight;
@@ -876,7 +850,6 @@ void main()
     // TRACE CAMERA TO GET PIXEL COLOUR
     int pathSegments = GeneratePath(camRay, u_bounces, pixelIndex, seed);
     vec3 colour = EvaluatePath(pathSegments, u_bounces, pixelIndex, seed) * cameraInfo.exposure;
-
 
     // FRAME ACCUMULATION
     vec4 oldAvg = imageLoad(renderImage, ivec2(pX, pY)); 

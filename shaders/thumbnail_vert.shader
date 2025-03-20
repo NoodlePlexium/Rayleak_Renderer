@@ -1,8 +1,8 @@
 #version 440 core
 
-layout(location = 0) in vec3 vertexPosition; // Position
-layout(location = 1) in vec3 vertexNormal;   // Normal
-layout(location = 2) in vec2 uv; // Texture coordinates
+layout(location = 0) in vec3 VertexPosition; 
+layout(location = 1) in vec3 VertexNormal;   
+layout(location = 2) in vec2 UV; 
 uniform mat4 u_MVP;
 
 out vec3 FragPos;
@@ -11,8 +11,8 @@ out vec2 FragUV;
 
 void main()
 {
-    gl_Position = u_MVP * vec4(vertexPosition, 1);
+    gl_Position = u_MVP * vec4(VertexPosition, 1);
     FragPos = gl_Position.xyz;
-    FragNormal = vertexNormal;
-    FragUV = uv;
+    FragNormal = VertexNormal;
+    FragUV = UV;
 }

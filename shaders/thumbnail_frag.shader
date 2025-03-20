@@ -46,8 +46,10 @@ void main()
     // SURFACE COLOUR
     vec3 surfaceColour = material.colour; 
     if ((material.textureFlags & (1 << 0)) != 0)
+    {
         surfaceColour = material.colour * texture(sampler2D(material.albedoHandle), FragUV).xyz;
-
+    }
+    
     // EMITTED LIGHT
     vec3 emittedLight = surfaceColour * material.emission;
 

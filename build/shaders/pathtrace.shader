@@ -307,26 +307,19 @@ RayHit RayTriangle(Ray ray, Vertex v1, Vertex v2, Vertex v3)
     vec3 normal = normalize(v1.normal * w + v2.normal * u + v3.normal * v);  // INTERPOLATE NORMAL USING BARYCENTRIC COORDINATES
     vec3 faceNormal = normalize(cross(edge1, edge2));
 
-    // Calculate UV differences
-    vec2 deltaUV1 = vec2(v2.u, v2.v) - vec2(v1.u, v1.v);
-    vec2 deltaUV2 = vec2(v3.u, v3.v) - vec2(v1.u, v1.v);
-
-    // Calculate denominator for the tangent formula
-    float r = deltaUV1.x * deltaUV2.y - deltaUV2.x * deltaUV1.y;
-
-    // Avoid division by zero (degenerate UVs)
-    if (abs(r) > 1e-6) {
-        float r_inv = 1.0f / r;
-        hit.tangent = normalize((edge1 * deltaUV2.y - edge2 * deltaUV1.y) * r_inv);
-    } 
-    else 
+    // CALCULATE THE TANGENT
+    vec2 dUV1 = vec2(v2.u, v2.v) - vec2(v1.u, v1.v);
+    vec2 dUV2 = vec2(v3.u, v3.v) - vec2(v1.u, v1.v);
+    float tanDenominator = dUV1.x * dUV2.y - dUV2.x * dUV1.y;
+    if (abs(tanDenominator) > 0.000001f)
     {
-        hit.tangent = vec3(1.0f, 0.0f, 0.0f);
+        float inverseDenominator = 1 / tanDenominator;
+        hit.tangent = normalize(vec3(edge1 * dUV2.y - edge2 * dUV1.y) * inverseDenominator);
     }
-
-    // Ensure orthogonality with the normal (optional but recommended)
-    hit.tangent = normalize(hit.tangent - dot(hit.tangent, hit.normal) * hit.normal);
-
+    else
+    {
+        hit.tangent = vec3(1, 0, 0);
+    }
 
     // SET HIT VALUES
     hit.frontFace = dot(ray.dir, normal) < 0.0f;
