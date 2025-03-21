@@ -224,7 +224,7 @@ public:
             }
 
             // ENVIRONMENT SETTINGS
-            changed |= ColourSelectAttribute("sky colour", "###Sky Colour Button", "###Sky Colour", renderSystem.skyColour, skyColourPopupOpen, GAP, 3);
+            changed |= ColourSelectAttribute("Sky colour", "###Sky Colour Button", "###Sky Colour", renderSystem.skyColour, skyColourPopupOpen, GAP, 3);
             changed |= DragFloatAttribute("Sky Brightness", "SKY BRIGHTNESS", "", 3, 3, &renderSystem.skyBrightness, 0.0f, 4.0f, 0.01f);
             if (changed) restartRender = true;
 
