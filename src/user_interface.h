@@ -129,10 +129,7 @@ public:
             ImVec2(1, 0)
         );
 
-        std::string frameTimeString = std::to_string(renderSystem.accumulationFrame) + " samples";
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 128, 255));
-        ImGui::Text("%s", frameTimeString.c_str());
-        ImGui::PopStyleColor();
+        ImGui::Dummy(ImVec2(0, 15));
 
         if (draggedModelReleased)
         {
